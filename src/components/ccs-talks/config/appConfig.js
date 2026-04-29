@@ -2,7 +2,7 @@ export const APP_CONFIG = {
   brand: {
     name: "CCS Talks",
     tagline: "A modern forum for the OLFU-CCS community.",
-    org: "GROUP 4 ™",
+    org: "GROUP 4™",
   },
   landing: {
     heroSubtitle: "Announcements, threads, study circles, and community events—fast, searchable, and beautifully organized.",

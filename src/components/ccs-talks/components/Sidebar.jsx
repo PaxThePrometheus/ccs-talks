@@ -165,7 +165,7 @@ export function Sidebar({ setPage, activeKey = "forum" }) {
       </div>
 
       <span style={{ fontStyle: "italic", fontWeight: 800, fontSize: 11, color: isLight ? "rgba(60,0,20,0.35)" : "rgba(255,255,255,0.2)", marginTop: "1.5rem", letterSpacing: "1px" }}>
-        MISFITS CREATIVES ™
+        GROUP 4™
       </span>
 
       <ConfirmDialog

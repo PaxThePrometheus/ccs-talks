@@ -2,39 +2,76 @@
 
 import { useEffect, useRef } from "react";
 import { GSAP_CDN } from "../cdn";
-import { THEME } from "../theme";
 import { useScript } from "../useScript";
+import { useAppState } from "../state/AppState";
 
-export function PostCard({ post, onLike, onBookmark }) {
+export function PostCard({
+  post,
+  user,
+  onLike,
+  onBookmark,
+  onAuthorEnter,
+  onAuthorLeave,
+  onOpenComments,
+  onShare,
+  onReport,
+  readOnly = false,
+}) {
   const cardRef = useRef(null);
   const gsapLoaded = useScript(GSAP_CDN);
+  const { tokens, prefs } = useAppState();
+  const isLight = prefs.mode === "light";
 
   useEffect(() => {
-    if (!gsapLoaded || typeof window === "undefined" || !window.gsap || !cardRef.current) return;
-    window.gsap.fromTo(cardRef.current, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out", delay: post.id * 0.07 });
-  }, [gsapLoaded, post.id]);
+    if (typeof window === "undefined" || !cardRef.current) return;
+    if (gsapLoaded && window.gsap && !prefs.reduceMotion) {
+      // Apple-y bounce: small overshoot, kept short and tasteful.
+      window.gsap.fromTo(
+        cardRef.current,
+        { opacity: 0, y: 22, scale: 0.965 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.6)" }
+      );
+    } else {
+      cardRef.current.style.opacity = "1";
+    }
+  }, [gsapLoaded, post.id, prefs.reduceMotion]);
 
-  const tagColor = { General: "#7a4060", Academics: "#405080", Tech: "#205040", Events: "#7a2020" };
+  const tagColor = isLight
+    ? { General: "#e9d4dd", Academics: "#d6e0f0", Tech: "#d4ece3", Events: "#f0d6d6" }
+    : { General: "#7a4060", Academics: "#405080", Tech: "#205040", Events: "#7a2020" };
+  const tagText = isLight ? "#3a0014" : "rgba(255,220,220,0.9)";
+  const displayName = user?.name ?? "Unknown";
+  const handle = user?.handle ?? "unknown";
+  const avColor = user?.avatarColor || (isLight ? "#c0002a" : "#9b0028");
+  const avAccent = user?.avatarAccent || (isLight ? "#ff6080" : "#50001a");
+
+  // Avatar can be either a color gradient or a real image
+  const hasImg = !!user?.avatarImage;
+
+  const muted = isLight ? "rgba(60,0,20,0.55)" : "rgba(240,180,180,0.7)";
+  const subtle = isLight ? "rgba(60,0,20,0.40)" : "rgba(240,180,180,0.55)";
+  const dividerColor = isLight ? "rgba(60,0,20,0.10)" : "rgba(255,255,255,0.07)";
 
   return (
     <div
       ref={cardRef}
       style={{
-        background: THEME.colors.cardBg,
-        border: `1px solid rgba(255,255,255,0.08)`,
+        background: tokens.cardBg,
+        border: `1px solid ${tokens.cardBorder}`,
         borderRadius: 18,
         backdropFilter: "blur(10px)",
         opacity: 0,
         transition: "border-color 0.2s, transform 0.15s",
-        boxShadow: "0 16px 50px rgba(0,0,0,0.30)",
+        boxShadow: isLight ? "0 12px 28px rgba(60,0,20,0.10)" : "0 16px 50px rgba(0,0,0,0.30)",
         overflow: "hidden",
+        color: tokens.text,
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = "rgba(255,255,255,0.14)";
+        e.currentTarget.style.borderColor = tokens.borderStrong;
         e.currentTarget.style.transform = "translateY(-1px)";
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
+        e.currentTarget.style.borderColor = tokens.cardBorder;
         e.currentTarget.style.transform = "translateY(0)";
       }}
     >
@@ -44,32 +81,45 @@ export function PostCard({ post, onLike, onBookmark }) {
             width: 40,
             height: 40,
             borderRadius: "50%",
-            background: "linear-gradient(135deg, #9b0028, #50001a)",
+            background: hasImg
+              ? `url(${user.avatarImage}) center/cover no-repeat`
+              : `linear-gradient(135deg, ${avColor}, ${avAccent})`,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             fontWeight: 700,
             fontSize: 13,
-            color: "#ffcccc",
+            color: "#ffe4ea",
             flexShrink: 0,
+            border: `1px solid ${tokens.border}`,
           }}
         >
-          {post.avatar}
+          {!hasImg && post.avatar}
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span style={{ fontWeight: 700, fontSize: 14, color: "#f0e0e0" }}>{post.author}</span>
-            <span style={{ color: "rgba(240,200,200,0.45)", fontSize: 13 }}>@{post.handle}</span>
-            <span style={{ color: "rgba(240,200,200,0.35)", fontSize: 12, marginLeft: "auto" }}>{post.time}</span>
+            <span
+              style={{ fontWeight: 700, fontSize: 14, color: tokens.textStrong, cursor: "default" }}
+              onMouseEnter={(e) => {
+                if (!onAuthorEnter) return;
+                const r = e.currentTarget.getBoundingClientRect();
+                onAuthorEnter(post.userId, r);
+              }}
+              onMouseLeave={() => onAuthorLeave?.()}
+            >
+              {displayName}
+            </span>
+            <span style={{ color: subtle, fontSize: 13 }}>@{handle}</span>
+            <span style={{ color: subtle, fontSize: 12, marginLeft: "auto" }}>{post.time}</span>
           </div>
           <span
             style={{
-              background: tagColor[post.tag] || "#503040",
-              color: "rgba(255,220,220,0.9)",
+              background: tagColor[post.tag] || (isLight ? "#e9d4dd" : "#503040"),
+              color: tagText,
               fontSize: 11,
               padding: "2px 8px",
               borderRadius: 20,
-              fontWeight: 600,
+              fontWeight: 700,
               marginTop: 2,
               display: "inline-block",
             }}
@@ -79,67 +129,44 @@ export function PostCard({ post, onLike, onBookmark }) {
         </div>
       </div>
 
-      <div style={{ height: 1, background: "rgba(255,255,255,0.07)" }} />
+      <div style={{ height: 1, background: dividerColor }} />
 
       <div style={{ padding: "0.95rem 1.2rem 1rem" }}>
-        <p style={{ color: "rgba(240,220,220,0.9)", fontSize: 15, lineHeight: 1.65, margin: 0 }}>{post.content}</p>
+        <p style={{ color: tokens.text, fontSize: 15, lineHeight: 1.65, margin: 0 }}>{post.content}</p>
       </div>
 
-      <div style={{ height: 1, background: "rgba(255,255,255,0.07)" }} />
+      <div style={{ height: 1, background: dividerColor }} />
 
       <div style={{ padding: "0.65rem 0.85rem", display: "flex", gap: 10, alignItems: "center" }}>
-        <button
-          onClick={() => onLike(post.id)}
-          style={{
-            background: "none",
-            border: "none",
-            color: "rgba(240,180,180,0.7)",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 13,
-            fontWeight: 500,
-            padding: "8px 10px",
-            borderRadius: 10,
-            transition: "color 0.2s",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#ff6080")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(240,180,180,0.7)")}
-        >
+        <ActionBtn disabled={readOnly} onClick={() => !readOnly && onLike?.(post.id)} muted={muted} hover="#ff6080">
           ♥ {post.likes}
-        </button>
-        <div style={{ width: 1, height: 18, background: "rgba(255,255,255,0.10)" }} />
-        <button
-          style={{
-            background: "none",
-            border: "none",
-            color: "rgba(240,180,180,0.7)",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 13,
-            fontWeight: 500,
-            padding: "8px 10px",
-            borderRadius: 10,
-          }}
-        >
+        </ActionBtn>
+        <Sep color={dividerColor} />
+        <ActionBtn onClick={() => onOpenComments?.(post.id)} muted={muted}>
           💬 {post.comments}
-        </button>
+        </ActionBtn>
+        <Sep color={dividerColor} />
+        <ActionBtn disabled={readOnly} onClick={() => !readOnly && onShare?.(post.id)} muted={muted}>
+          ↗ Share
+        </ActionBtn>
+        <ActionBtn disabled={readOnly} onClick={() => !readOnly && onReport?.(post.id)} muted={subtle}>
+          ⚑ Report
+        </ActionBtn>
         <button
-          onClick={() => onBookmark(post.id)}
+          disabled={readOnly}
+          onClick={() => !readOnly && onBookmark?.(post.id)}
           style={{
             background: "none",
             border: "none",
-            cursor: "pointer",
+            cursor: readOnly ? "not-allowed" : "pointer",
             marginLeft: "auto",
-            color: post.bookmarked ? "#ff8060" : "rgba(240,180,180,0.5)",
+            color: post.bookmarked ? "#ff8060" : subtle,
             fontSize: 16,
             padding: "8px 10px",
             lineHeight: 1,
             transition: "color 0.2s",
             borderRadius: 10,
+            opacity: readOnly ? 0.55 : 1,
           }}
         >
           🔖
@@ -149,3 +176,34 @@ export function PostCard({ post, onLike, onBookmark }) {
   );
 }
 
+function ActionBtn({ children, onClick, disabled, muted, hover }) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        background: "none",
+        border: "none",
+        color: muted,
+        cursor: disabled ? "not-allowed" : "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        fontSize: 13,
+        fontWeight: 600,
+        padding: "8px 10px",
+        borderRadius: 10,
+        transition: "color 0.15s",
+        opacity: disabled ? 0.55 : 1,
+      }}
+      onMouseEnter={(e) => { if (hover && !disabled) e.currentTarget.style.color = hover; }}
+      onMouseLeave={(e) => (e.currentTarget.style.color = muted)}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Sep({ color }) {
+  return <div style={{ width: 1, height: 18, background: color }} />;
+}

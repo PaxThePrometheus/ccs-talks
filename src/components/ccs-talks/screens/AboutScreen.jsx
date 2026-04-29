@@ -39,7 +39,7 @@ export function AboutScreen() {
         {[
           { title: "Our Community", body: "CCS Talks is the dedicated digital forum for students, faculty, and alumni of the OLFU College of Computer Studies. A space to discuss, collaborate, and connect." },
           { title: "Our Mission", body: "To foster a vibrant tech community within OLFU-CCS, empowering members to share knowledge, explore ideas, and build lasting connections." },
-          { title: "Made by", body: "Misfits Creatives™ — a student creative collective dedicated to building meaningful digital experiences for the CCS community." },
+          { title: "Made by", body: "GROUP 4™ — a student creative collective dedicated to building meaningful digital experiences for the CCS community." },
         ].map(({ title, body }) => (
           <div key={title} style={{ background: THEME.colors.cardBg, border: `1px solid ${THEME.colors.cardBorder}`, borderRadius: THEME.radii.md, padding: "1.5rem", marginBottom: "1rem", textAlign: "left", backdropFilter: "blur(8px)" }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: "#f0e0e0", marginBottom: 6 }}>{title}</div>

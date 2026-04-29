@@ -1,50 +1,79 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GSAP_CDN } from "../cdn";
-import { INTERESTS, MOCK_POSTS, RISING, TRENDING } from "../data";
-import { THEME } from "../theme";
+import { APP_CONFIG, FORUM_RAIL } from "../config/appConfig";
 import { useScript } from "../useScript";
 import { PostCard } from "../components/PostCard";
+import { MiniProfilePreview } from "../ui/MiniProfilePreview";
+import { useAppState } from "../state/AppState";
+import { PostDetailModal } from "../ui/PostDetailModal";
 
-export function ForumScreen() {
-  const [posts, setPosts] = useState(MOCK_POSTS);
+export function ForumScreen({ readOnly = false, onSignInPrompt }) {
+  const { users, posts, setPosts, likePost, toggleBookmark, sharePost, reportPost, tokens, prefs, setPage } = useAppState();
+  const isLight = prefs.mode === "light";
   const [draft, setDraft] = useState("");
   const composeRef = useRef(null);
   const feedScrollRef = useRef(null);
   const gsapLoaded = useScript(GSAP_CDN);
   const [loadingMore, setLoadingMore] = useState(false);
   const [caughtUp, setCaughtUp] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const closeTimerRef = useRef(null);
+  const [activePostId, setActivePostId] = useState(null);
+  const [activeTag, setActiveTag] = useState("All");
 
   useEffect(() => {
     if (!gsapLoaded || typeof window === "undefined" || !window.gsap || !composeRef.current) return;
+    if (prefs.reduceMotion) {
+      composeRef.current.style.opacity = "1";
+      return;
+    }
     window.gsap.fromTo(composeRef.current, { opacity: 0, y: -16 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" });
-  }, [gsapLoaded]);
-
-  const handleLike = useCallback((id) => {
-    setPosts((ps) => ps.map((p) => (p.id === id ? { ...p, likes: p.likes + 1 } : p)));
-  }, []);
-
-  const handleBookmark = useCallback((id) => {
-    setPosts((ps) => ps.map((p) => (p.id === id ? { ...p, bookmarked: !p.bookmarked } : p)));
-  }, []);
+  }, [gsapLoaded, prefs.reduceMotion]);
 
   const handlePublish = () => {
+    if (readOnly) {
+      onSignInPrompt?.();
+      return;
+    }
     if (!draft.trim()) return;
     const newPost = {
       id: Date.now(),
-      author: "You",
-      handle: "you",
+      userId: "u_you",
       avatar: "ME",
       time: "Just now",
       content: draft,
       likes: 0,
       comments: 0,
       bookmarked: false,
-      tag: "General",
+      tag: prefs.defaultPostTag || "General",
     };
     setPosts((ps) => [newPost, ...ps]);
     setDraft("");
+  };
+
+  const handleAuthorEnter = (userId, rect) => {
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setPreview({ userId, rect });
+  };
+  const handleAuthorLeave = () => {
+    if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = window.setTimeout(() => setPreview(null), 180);
+  };
+
+  const handlePreviewEnter = () => {
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+  const handlePreviewLeave = () => {
+    if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = window.setTimeout(() => setPreview(null), 120);
   };
 
   const onFeedScroll = () => {
@@ -60,23 +89,24 @@ export function ForumScreen() {
   };
 
   const Panel = ({ title, children }) => (
-    <div style={{ background: THEME.colors.cardBg, border: `1px solid ${THEME.colors.cardBorder}`, borderRadius: 14, backdropFilter: "blur(10px)", overflow: "hidden", boxShadow: "0 14px 40px rgba(0,0,0,0.25)" }}>
-      <div style={{ background: "rgba(160,0,40,0.65)", padding: "10px 16px", fontWeight: 700, fontSize: 13, color: "#ffcccc" }}>{title}</div>
+    <div style={{ background: tokens.cardBg, border: `1px solid ${tokens.cardBorder}`, borderRadius: 14, backdropFilter: "blur(10px)", overflow: "hidden", boxShadow: isLight ? "0 10px 24px rgba(60,0,20,0.08)" : "0 14px 40px rgba(0,0,0,0.25)" }}>
+      <div style={{ background: isLight ? "rgba(255,224,232,0.85)" : "rgba(160,0,40,0.45)", padding: "10px 16px", fontWeight: 800, fontSize: 13, color: isLight ? "#3a0014" : "#ffd2d8", letterSpacing: "-0.1px" }}>{title}</div>
       {children}
     </div>
   );
 
-  const PanelRow = ({ children }) => (
+  const PanelRow = ({ children, onClick }) => (
     <div
+      onClick={onClick}
       style={{
         padding: "10px 16px",
-        borderTop: `1px solid ${THEME.colors.cardBorder}`,
-        color: "rgba(240,200,200,0.75)",
+        borderTop: `1px solid ${tokens.divider}`,
+        color: tokens.textMuted,
         fontSize: 13,
         cursor: "pointer",
-        transition: "background 0.2s",
+        transition: "background 0.15s",
       }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(120,0,30,0.3)")}
+      onMouseEnter={(e) => (e.currentTarget.style.background = isLight ? "rgba(60,0,20,0.05)" : "rgba(120,0,30,0.30)")}
       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
     >
       {children}
@@ -89,6 +119,7 @@ export function ForumScreen() {
       <div
         ref={feedScrollRef}
         onScroll={onFeedScroll}
+        className="ccs-scroll"
         style={{
           position: "fixed",
           top: 0,
@@ -98,38 +129,90 @@ export function ForumScreen() {
           overflowY: "auto",
           overflowX: "hidden",
           padding: "1.75rem 2rem 2.5rem",
-          borderLeft: `1px solid ${THEME.colors.divider}`,
-          borderRight: `1px solid ${THEME.colors.divider}`,
+          borderLeft: `1px solid ${tokens.divider}`,
+          borderRight: `1px solid ${tokens.divider}`,
         }}
       >
         <div style={{ maxWidth: 760, margin: "0 auto" }}>
+          {readOnly && (
+            <div
+              style={{
+                marginBottom: 14,
+                padding: "12px 14px",
+                borderRadius: 14,
+                border: `1px solid ${tokens.cardBorder}`,
+                background: tokens.cardBg,
+                backdropFilter: "blur(12px)",
+                color: tokens.text,
+                fontSize: 13,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 900, color: tokens.textStrong }}>You're browsing as a guest.</div>
+                <div style={{ color: tokens.textMuted, marginTop: 2 }}>Sign in to post, like, bookmark, or comment.</div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setPage("login")} style={btn(tokens, "solid")}>Sign in</button>
+                <button onClick={() => setPage("register")} style={btn(tokens, "ghost")}>Create account</button>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            {["All", "General", "Academics", "Tech", "Events"].map((t) => (
+              <button
+                key={t}
+                onClick={() => setActiveTag(t)}
+                style={{
+                  border: `1px solid ${tokens.border}`,
+                  background: activeTag === t ? (isLight ? "rgba(60,0,20,0.10)" : "rgba(255,255,255,0.10)") : tokens.surfaceAlt,
+                  color: tokens.text,
+                  padding: "7px 10px",
+                  borderRadius: 999,
+                  cursor: "pointer",
+                  fontWeight: 900,
+                  fontSize: 12,
+                }}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+
           <div
             ref={composeRef}
             style={{
               display: "flex",
               alignItems: "center",
               gap: 12,
-              background: THEME.colors.cardBg,
-              border: `1px solid rgba(255,255,255,0.10)`,
+              background: tokens.cardBg,
+              border: `1px solid ${tokens.cardBorder}`,
               borderRadius: 18,
               padding: "12px 14px",
               marginBottom: "1.2rem",
               backdropFilter: "blur(12px)",
               opacity: 0,
-              boxShadow: "0 18px 60px rgba(0,0,0,0.30)",
+              boxShadow: isLight ? "0 12px 24px rgba(60,0,20,0.08)" : "0 18px 60px rgba(0,0,0,0.30)",
             }}
           >
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="What's on your mind?"
+              placeholder={readOnly ? "Sign in to start posting…" : APP_CONFIG.placeholders.composer}
+              disabled={readOnly}
               style={{
                 flex: 1,
                 background: "none",
                 border: "none",
                 outline: "none",
-                color: "#f0e0e0",
+                color: tokens.text,
                 fontSize: 14,
+                opacity: readOnly ? 0.6 : 1,
               }}
               onKeyDown={(e) => e.key === "Enter" && handlePublish()}
             />
@@ -142,29 +225,64 @@ export function ForumScreen() {
                 padding: "9px 18px",
                 borderRadius: 12,
                 cursor: "pointer",
-                fontWeight: 700,
+                fontWeight: 800,
                 fontSize: 13,
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
-                transition: "opacity 0.2s",
               }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M12 20h9" />
                 <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
               </svg>
-              Publish
+              {readOnly ? "Sign in" : "Publish"}
             </button>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            {posts.map((post) => (
-              <PostCard key={post.id} post={post} onLike={handleLike} onBookmark={handleBookmark} />
-            ))}
+            {posts
+              .filter((p) => activeTag === "All" || p.tag === activeTag)
+              .slice(0, readOnly ? 3 : posts.length) // limited preview
+              .map((post) => (
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  user={users[post.userId]}
+                  readOnly={readOnly}
+                  onLike={readOnly ? onSignInPrompt : likePost}
+                  onBookmark={readOnly ? onSignInPrompt : toggleBookmark}
+                  onAuthorEnter={handleAuthorEnter}
+                  onAuthorLeave={handleAuthorLeave}
+                  onOpenComments={(id) => setActivePostId(id)}
+                  onShare={readOnly ? onSignInPrompt : sharePost}
+                  onReport={readOnly ? onSignInPrompt : (id) => reportPost(id, "Reported from feed")}
+                />
+              ))}
           </div>
 
-          {(loadingMore || caughtUp) && (
+          {readOnly && (
+            <div
+              style={{
+                marginTop: "1.25rem",
+                padding: "16px",
+                borderRadius: 14,
+                border: `1px dashed ${tokens.borderStrong}`,
+                background: tokens.cardBg,
+                color: tokens.text,
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontWeight: 900, color: tokens.textStrong }}>Want to see the rest?</div>
+              <div style={{ color: tokens.textMuted, fontSize: 13, marginTop: 4 }}>Sign in to view {posts.length - 3}+ more threads, comments, and join the conversation.</div>
+              <div style={{ marginTop: 10, display: "inline-flex", gap: 8 }}>
+                <button onClick={() => setPage("login")} style={btn(tokens, "solid")}>Sign in</button>
+                <button onClick={() => setPage("register")} style={btn(tokens, "ghost")}>Create account</button>
+              </div>
+            </div>
+          )}
+
+          {!readOnly && (loadingMore || caughtUp) && (
             <div style={{ marginTop: "1.25rem" }}>
               {loadingMore && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -174,13 +292,13 @@ export function ForumScreen() {
                       style={{
                         height: 140,
                         borderRadius: 18,
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        background: "rgba(80,0,26,0.40)",
+                        border: `1px solid ${tokens.cardBorder}`,
+                        background: tokens.surfaceAlt,
                         backdropFilter: "blur(10px)",
                         overflow: "hidden",
                       }}
                     >
-                      <div style={{ height: "100%", background: "linear-gradient(90deg, rgba(255,255,255,0.03), rgba(255,255,255,0.07), rgba(255,255,255,0.03))", backgroundSize: "300% 100%", animation: "ccsShimmer 1.2s ease-in-out infinite" }} />
+                      <div style={{ height: "100%", background: "linear-gradient(90deg, rgba(255,255,255,0.03), rgba(255,255,255,0.10), rgba(255,255,255,0.03))", backgroundSize: "300% 100%", animation: "ccsShimmer 1.2s ease-in-out infinite" }} />
                     </div>
                   ))}
                 </div>
@@ -191,15 +309,15 @@ export function ForumScreen() {
                     marginTop: "1rem",
                     padding: "14px 16px",
                     borderRadius: 14,
-                    border: "1px solid rgba(255,255,255,0.10)",
-                    background: "rgba(30,0,12,0.55)",
+                    border: `1px solid ${tokens.cardBorder}`,
+                    background: tokens.cardBg,
                     backdropFilter: "blur(12px)",
-                    color: "rgba(240,220,220,0.75)",
+                    color: tokens.textMuted,
                     fontSize: 13,
                     textAlign: "center",
                   }}
                 >
-                  You’re all caught up.
+                  You're all caught up.
                 </div>
               )}
             </div>
@@ -207,7 +325,7 @@ export function ForumScreen() {
         </div>
       </div>
 
-      {/* Right rail (fixed) */}
+      {/* Right rail (fixed). No duplicate search — left nav already has Search. */}
       <div
         style={{
           position: "fixed",
@@ -221,42 +339,64 @@ export function ForumScreen() {
       >
         <div style={{ height: "100%", overflow: "hidden" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
-            <div style={{ background: THEME.colors.cardBg, border: `1px solid rgba(255,255,255,0.10)`, borderRadius: 14, padding: "10px 14px", backdropFilter: "blur(12px)" }}>
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <span style={{ opacity: 0.75 }}>🔎</span>
-                <input
-                  placeholder="Search..."
-                  style={{
-                    background: "none",
-                    border: "none",
-                    outline: "none",
-                    color: "#f0e0e0",
-                    fontSize: 13,
-                    width: "100%",
-                  }}
-                />
-              </div>
-            </div>
-
             <Panel title="Rising Threads">
-              {RISING.map((t, i) => (
-                <PanelRow key={i}>{t}</PanelRow>
+              {FORUM_RAIL.rising.map((t, i) => (
+                <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
               ))}
             </Panel>
             <Panel title="From your interests">
-              {INTERESTS.map((t, i) => (
-                <PanelRow key={i}>{t}</PanelRow>
+              {FORUM_RAIL.interests.map((t, i) => (
+                <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
               ))}
             </Panel>
             <Panel title="Trending">
-              {TRENDING.map((t, i) => (
-                <PanelRow key={i}>{t}</PanelRow>
+              {FORUM_RAIL.trending.map((t, i) => (
+                <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
               ))}
             </Panel>
+            <button onClick={() => setPage("search")} style={{ ...btn(tokens, "ghost"), marginTop: 4 }}>
+              🔎 Open Search
+            </button>
           </div>
         </div>
       </div>
+
+      <MiniProfilePreview
+        visible={!!preview}
+        user={preview ? users[preview.userId] : null}
+        anchorRect={preview?.rect}
+        onMouseEnter={handlePreviewEnter}
+        onMouseLeave={handlePreviewLeave}
+        onRequestClose={() => setPreview(null)}
+      />
+
+      {!readOnly && <PostDetailModal open={activePostId != null} postId={activePostId} onClose={() => setActivePostId(null)} />}
     </>
   );
 }
 
+function btn(tokens, kind) {
+  if (kind === "solid") {
+    return {
+      border: `1px solid ${tokens.borderStrong}`,
+      background: "linear-gradient(135deg, rgba(255,96,128,0.30), rgba(155,0,40,0.65))",
+      color: "#fff",
+      padding: "9px 12px",
+      borderRadius: 12,
+      cursor: "pointer",
+      fontWeight: 850,
+      fontSize: 13,
+    };
+  }
+  return {
+    border: `1px solid ${tokens.border}`,
+    background: tokens.surface,
+    color: tokens.text,
+    padding: "9px 12px",
+    borderRadius: 12,
+    cursor: "pointer",
+    fontWeight: 750,
+    fontSize: 13,
+    backdropFilter: "blur(8px)",
+  };
+}

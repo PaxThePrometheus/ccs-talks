@@ -25,6 +25,29 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Custom scrollbars (scoped via .ccs-scroll class) */
+.ccs-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 96, 128, 0.35) rgba(0, 0, 0, 0);
+}
+.ccs-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.ccs-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0);
+}
+.ccs-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(255, 96, 128, 0.26), rgba(155, 0, 40, 0.35));
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 999px;
+}
+.ccs-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(255, 96, 128, 0.34), rgba(155, 0, 40, 0.44));
+}
+
+/* (overlay removed) */
+
 @keyframes ccsShimmer {
   0% {
     background-position: 0% 0%;
@@ -33,3 +56,70 @@ body {
     background-position: 100% 0%;
   }
 }
+
+/* ----- Light mode polish -----
+   Many screens use heavy hard-coded dark surfaces (rgba(30,0,12,...) etc.).
+   In light mode we soften them with overrides scoped to .ccs-light, so the
+   layout still looks right but with light backgrounds + readable text.    */
+.ccs-light .ccs-scroll {
+  scrollbar-color: rgba(155, 0, 40, 0.35) rgba(0, 0, 0, 0);
+}
+.ccs-light .ccs-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(155, 0, 40, 0.30), rgba(192, 0, 42, 0.40));
+  border: 1px solid rgba(60, 0, 20, 0.10);
+}
+.ccs-light input,
+.ccs-light textarea,
+.ccs-light select {
+  color: #2a0010 !important;
+  background: rgba(255, 255, 255, 0.88) !important;
+  border-color: rgba(60, 0, 20, 0.16) !important;
+}
+.ccs-light input::placeholder,
+.ccs-light textarea::placeholder {
+  color: rgba(60, 0, 20, 0.45) !important;
+}
+
+/* ---------- Themed selects (dropdowns) ----------
+   <select> in both modes inherits weird browser-native colors. We override the
+   closed-state colors universally and the option list per-mode. The native
+   dropdown panel itself is OS-rendered, so we set option { background, color }
+   which most browsers honor. */
+.ccs-dark select {
+  background: rgba(30, 0, 12, 0.85) !important;
+  color: #f4ecec !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%23ff96a6' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>") !important;
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
+  padding-right: 30px;
+}
+.ccs-dark select option,
+.ccs-dark select optgroup {
+  background-color: #2a0010 !important;
+  color: #f4ecec !important;
+}
+.ccs-light select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%23c0002a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>") !important;
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
+  padding-right: 30px;
+}
+.ccs-light select option,
+.ccs-light select optgroup {
+  background-color: #fff5f7 !important;
+  color: #2a0010 !important;
+}
+
+/* In light mode, the inline color="#fff" on text in headers becomes invisible
+   on white-ish surfaces. Override common offenders inside light-mode panels
+   that we explicitly tag as ccs-onlight, but otherwise keep most components
+   self-contained via the tokens system. */
+
+

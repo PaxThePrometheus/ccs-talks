@@ -13,7 +13,7 @@ export function ActivitiesScreen() {
       style={{
         position: "fixed",
         top: 0,
-        left: 280,
+        left: "var(--ccs-shell-left)",
         right: 0,
         bottom: 0,
         overflowY: "auto",

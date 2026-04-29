@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { THREE_CDN } from "../cdn";
 import { styles } from "../theme";
 import { useScript } from "../useScript";
+import { useLowPower } from "../useLowPower";
 
 /**
  * Slow, soft lava-lamp:
@@ -16,6 +17,10 @@ import { useScript } from "../useScript";
  *   through frosted glass, not neon stickers.
  */
 
+// Maximum blob count. The actual count is scaled down on low-end devices
+// (see effect below). The shader compiles for the max so we never have to
+// recompile when the count changes — we just send 0-radius blobs for the
+// "extras" so they contribute nothing.
 const NUM_BLOBS = 8;
 
 const VERT = `
@@ -83,6 +88,7 @@ export function ThreeBackground({ active = true, accent = "#ff6080", light = fal
   const canvasRef = useRef(null);
   const threeLoaded = useScript(THREE_CDN);
   const animRef = useRef(null);
+  const { pixelRatioCap, fpsCap, blobMultiplier } = useLowPower();
 
   useEffect(() => {
     if (!threeLoaded || !active || typeof window === "undefined" || !window.THREE) return;
@@ -90,8 +96,21 @@ export function ThreeBackground({ active = true, accent = "#ff6080", light = fal
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, premultipliedAlpha: false });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Active blob count: capped at NUM_BLOBS, scaled down on low-end devices.
+    const activeCount = Math.max(3, Math.round(NUM_BLOBS * blobMultiplier));
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      alpha: true,
+      // Antialiasing is the single most expensive WebGL setting on integrated
+      // GPUs. We disable it on low-end and rely on the shader's smoothstep for
+      // soft edges (which is what gives the wax look anyway).
+      antialias: pixelRatioCap >= 2,
+      premultipliedAlpha: false,
+      // Hint to the GPU scheduler that this is a background effect, not a game.
+      powerPreference: "low-power",
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, pixelRatioCap));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setClearColor(0x000000, 0);
 
@@ -161,8 +180,27 @@ export function ThreeBackground({ active = true, accent = "#ff6080", light = fal
     scene.add(quad);
 
     let prev = performance.now();
+    let paused = false;
+    const minFrameMs = 1000 / fpsCap;
+    let lastFrame = 0;
+
+    const onVisibility = () => {
+      paused = document.visibilityState === "hidden";
+      // Reset prev so we don't get a giant dt jump after resuming.
+      prev = performance.now();
+      lastFrame = prev;
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
     const animate = (now) => {
       animRef.current = requestAnimationFrame(animate);
+      if (paused) return;
+
+      // Frame-rate cap: respect fpsCap (60 on desktop, 30 on low-power).
+      // We still keep rAF driving the loop so we hand back to the GPU cleanly.
+      if (now - lastFrame < minFrameMs - 0.5) return;
+      lastFrame = now;
+
       const dt = Math.min(0.05, (now - prev) / 1000); // seconds, capped
       prev = now;
 
@@ -214,7 +252,10 @@ export function ThreeBackground({ active = true, accent = "#ff6080", light = fal
           continue;
         }
 
-        const r = b.targetR * breath * life;
+        // Disabled blobs (beyond activeCount) get radius 0 so the shader sees
+        // them but they contribute nothing to the field. Cheaper than
+        // recompiling the shader when fpsCap/blobMultiplier change.
+        const r = i < activeCount ? b.targetR * breath * life : 0;
         blobUniformArr[i].set(b.x, b.y, r);
       }
 
@@ -234,11 +275,12 @@ export function ThreeBackground({ active = true, accent = "#ff6080", light = fal
     return () => {
       cancelAnimationFrame(animRef.current);
       window.removeEventListener("resize", onResize);
+      document.removeEventListener("visibilitychange", onVisibility);
       quad.geometry.dispose();
       material.dispose();
       renderer.dispose();
     };
-  }, [threeLoaded, active, accent, light]);
+  }, [threeLoaded, active, accent, light, pixelRatioCap, fpsCap, blobMultiplier]);
 
   return (
     <canvas

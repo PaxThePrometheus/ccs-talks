@@ -18,12 +18,13 @@ export function NavBar({ setPage, showFull }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        padding: "0 2rem",
+        padding: "0 var(--ccs-shell-pad-x)",
         height: 68,
         background: isLight ? "rgba(255,255,255,0.78)" : "rgba(40,0,14,0.6)",
         backdropFilter: "blur(12px)",
         borderBottom: `1px solid ${tokens.cardBorder}`,
         color: tokens.text,
+        gap: 8,
       }}
     >
       <span
@@ -40,7 +41,7 @@ export function NavBar({ setPage, showFull }) {
       </span>
 
       {showFull && (
-        <div style={{ display: "flex", gap: "1.6rem", alignItems: "center" }}>
+        <div className="ccs-hide-mobile" style={{ display: "flex", gap: "1.6rem", alignItems: "center" }}>
           <span onClick={() => setPage("about")} style={{ color: tokens.textMuted, cursor: "pointer", fontSize: 14, fontWeight: 700 }}>About</span>
           <span onClick={() => setPage("forum")} style={{ color: tokens.textMuted, cursor: "pointer", fontSize: 14, fontWeight: 700 }}>Browse forum</span>
           <span
@@ -57,7 +58,7 @@ export function NavBar({ setPage, showFull }) {
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div suppressHydrationWarning style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <button
           onClick={toggleMode}
           title="Toggle theme"
@@ -84,7 +85,7 @@ export function NavBar({ setPage, showFull }) {
         ) : (
           <>
             <button onClick={() => setPage("login")} style={ghost(tokens)}>Sign in</button>
-            <button onClick={() => setPage("register")} style={primary(tokens)}>Create account</button>
+            <button onClick={() => setPage("register")} style={primary(tokens)} className="ccs-hide-mobile">Create account</button>
           </>
         )}
       </div>

@@ -6,10 +6,10 @@ export function MiniProfilePreview({ visible, user, anchorRect, onRequestClose, 
   const pos = useMemo(() => {
     if (!anchorRect) return null;
     const gap = 10;
-    const width = 320;
-    const height = 210;
     const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
     const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+    const width = Math.min(320, vw - 32);
+    const height = 210;
 
     let left = Math.min(vw - width - 16, Math.max(16, anchorRect.left));
     let top = anchorRect.bottom + gap;

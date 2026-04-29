@@ -24,12 +24,16 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
   const [activeTag, setActiveTag] = useState("All");
 
   useEffect(() => {
-    if (!gsapLoaded || typeof window === "undefined" || !window.gsap || !composeRef.current) return;
-    if (prefs.reduceMotion) {
-      composeRef.current.style.opacity = "1";
-      return;
+    if (typeof window === "undefined" || !composeRef.current) return undefined;
+    if (gsapLoaded && window.gsap && !prefs.reduceMotion) {
+      window.gsap.fromTo(composeRef.current, { opacity: 0, y: -16 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" });
+      return undefined;
     }
-    window.gsap.fromTo(composeRef.current, { opacity: 0, y: -16 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" });
+    composeRef.current.style.opacity = "1";
+    const id = setTimeout(() => {
+      if (composeRef.current) composeRef.current.style.opacity = "1";
+    }, 1200);
+    return () => clearTimeout(id);
   }, [gsapLoaded, prefs.reduceMotion]);
 
   const handlePublish = () => {
@@ -115,7 +119,8 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
 
   return (
     <>
-      {/* Center feed (ONLY this scrolls) */}
+      {/* Center feed (ONLY this scrolls). Left/right offsets come from CSS
+          variables so the feed expands to full width on small viewports. */}
       <div
         ref={feedScrollRef}
         onScroll={onFeedScroll}
@@ -123,12 +128,12 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
         style={{
           position: "fixed",
           top: 0,
-          left: 280,
-          right: 320,
+          left: "var(--ccs-shell-left)",
+          right: "var(--ccs-rail-right)",
           bottom: 0,
           overflowY: "auto",
           overflowX: "hidden",
-          padding: "1.75rem 2rem 2.5rem",
+          padding: "1.75rem var(--ccs-shell-pad-x) 2.5rem",
           borderLeft: `1px solid ${tokens.divider}`,
           borderRight: `1px solid ${tokens.divider}`,
         }}
@@ -282,6 +287,27 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
             </div>
           )}
 
+          {/* Inline rails — only visible on small screens (the floating right
+              rail below is hidden by CSS at the same breakpoint). */}
+          <div className="ccs-hide-tablet" style={{ display: "none" }} />
+          <div style={{ marginTop: "1.5rem" }} className="ccs-rail-inline">
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <Panel title="Rising Threads">
+                {FORUM_RAIL.rising.map((t, i) => (
+                  <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
+                ))}
+              </Panel>
+              <Panel title="Trending">
+                {FORUM_RAIL.trending.map((t, i) => (
+                  <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
+                ))}
+              </Panel>
+              <button onClick={() => setPage("search")} style={{ ...btn(tokens, "ghost") }}>
+                🔎 Open Search
+              </button>
+            </div>
+          </div>
+
           {!readOnly && (loadingMore || caughtUp) && (
             <div style={{ marginTop: "1.25rem" }}>
               {loadingMore && (
@@ -325,8 +351,10 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
         </div>
       </div>
 
-      {/* Right rail (fixed). No duplicate search — left nav already has Search. */}
+      {/* Right rail (fixed). Hidden at tablet/mobile breakpoints — the same
+          panels are rendered inline above. */}
       <div
+        className="ccs-hide-tablet"
         style={{
           position: "fixed",
           top: 0,

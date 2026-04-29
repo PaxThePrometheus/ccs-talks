@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { styles } from "./theme";
 import { ThreeBackground } from "./components/ThreeBackground";
 import { DynamicBlobs } from "./components/DynamicBlobs";
+import { useLowPower } from "./useLowPower";
 import { NavBar } from "./components/NavBar";
 import { Sidebar } from "./components/Sidebar";
 import { LandingScreen } from "./screens/LandingScreen";
@@ -23,6 +24,8 @@ import { AppStateProvider, useAppState } from "./state/AppState";
 
 function CCSTalksAppInner() {
   const { page, setPage, profile, prefs, tokens, isAuthed } = useAppState();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { isLowPower } = useLowPower();
   const isForum = page === "forum";
   const isProfile = page === "profile";
   const isSearch = page === "search";
@@ -54,7 +57,7 @@ function CCSTalksAppInner() {
 
   return (
     <div
-      className={`ccs-app ${isLight ? "ccs-light" : "ccs-dark"}`}
+      className={`ccs-app ${isLight ? "ccs-light" : "ccs-dark"}${isLowPower ? " ccs-low-power" : ""}`}
       style={{
         ...styles.root,
         background: tokens.appBg,
@@ -80,7 +83,31 @@ function CCSTalksAppInner() {
       <div style={styles.page}>
         {hasSidebarShell ? (
           <>
-            <Sidebar setPage={setPage} activeKey={page} />
+            {/* Mobile-only hamburger; the CSS handles when it shows. */}
+            <button
+              type="button"
+              aria-label="Open menu"
+              className="ccs-hamburger"
+              onClick={() => setSidebarOpen(true)}
+              style={{
+                background: tokens.surface,
+                border: `1px solid ${tokens.border}`,
+                color: tokens.text,
+              }}
+            >
+              ☰
+            </button>
+            {/* Backdrop renders only when drawer is open on mobile. */}
+            <div
+              className={`ccs-sidebar-backdrop${sidebarOpen ? " is-open" : ""}`}
+              onClick={() => setSidebarOpen(false)}
+            />
+            <Sidebar
+              setPage={setPage}
+              activeKey={page}
+              mobileOpen={sidebarOpen}
+              onMobileClose={() => setSidebarOpen(false)}
+            />
             {isForum && <ForumScreen readOnly={!isAuthed} onSignInPrompt={() => setPage("login")} />}
             {isProfile && isAuthed && <ProfileScreen />}
             {isSearch && <SearchScreen />}

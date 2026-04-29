@@ -25,6 +25,19 @@ export function LandingScreen({ setPage }) {
     return () => { try { delete window.__ccsScrollToCommunity; } catch {} };
   }, []);
 
+  // Defensive: if GSAP somehow never resolves (CDN blocked, ad-blocker, slow
+  // network, etc.) we still need every animated element to become visible.
+  // Without this, the inline `opacity: 0` would leave the hero blank forever.
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const t = setTimeout(() => {
+      if (window.gsap) return; // animator will handle visibility
+      const targets = [heroRef.current, subtitleRef.current, ctaRef.current, ...featureRefs.current, ...stepRefs.current, ...orgRefs.current];
+      targets.forEach((el) => { if (el) el.style.opacity = "1"; });
+    }, 1500);
+    return () => clearTimeout(t);
+  }, []);
+
   useEffect(() => {
     if (!gsapLoaded || typeof window === "undefined" || !window.gsap) return;
     if (prefs.reduceMotion) {
@@ -52,15 +65,15 @@ export function LandingScreen({ setPage }) {
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", color: tokens.text }}>
       {/* HERO */}
-      <section style={{ paddingTop: 100, padding: "100px 5vw 60px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 1fr)", gap: 32, alignItems: "center" }}>
+      <section style={{ padding: "100px 5vw 60px" }}>
+        <div className="ccs-stack-tablet" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 1fr)", gap: 32, alignItems: "center" }}>
           <div>
             <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.18em", color: tokens.textMuted }}>OLFU · COLLEGE OF COMPUTER STUDIES</div>
             <h1
               ref={heroRef}
               style={{
                 fontWeight: 950,
-                fontSize: "clamp(3rem, 9vw, 7.5rem)",
+                fontSize: "clamp(2.4rem, 9vw, 7.5rem)",
                 color: tokens.textStrong,
                 lineHeight: 0.95,
                 letterSpacing: "-3px",
@@ -142,7 +155,7 @@ export function LandingScreen({ setPage }) {
       {/* HOW IT WORKS */}
       <section style={{ padding: "10px 5vw 50px" }}>
         <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.16em", color: tokens.textMuted }}>HOW IT WORKS</div>
-        <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+        <div className="ccs-stack-mobile" style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
           {[
             { n: "01", t: "Sign in with your CCS email", b: "Use your @student.fatima.edu.ph or @fatima.edu.ph address. Mods keep things kind." },
             { n: "02", t: "Subscribe to tags & people", b: "Follow #Academics or your favorite organizers — your feed stays focused." },
@@ -227,7 +240,7 @@ export function LandingScreen({ setPage }) {
 
       {/* FOOTER */}
       <footer style={{ padding: "2rem 5vw 1.75rem", borderTop: `1px solid ${tokens.divider}` }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1.2fr repeat(3, 1fr)", gap: 16, alignItems: "start" }}>
+        <div className="ccs-stack-mobile" style={{ display: "grid", gridTemplateColumns: "1.2fr repeat(3, 1fr)", gap: 16, alignItems: "start" }}>
           <div>
             <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.3px" }}>{APP_CONFIG.brand.name}</div>
             <div style={{ marginTop: 8, color: tokens.textMuted, fontSize: 13, lineHeight: 1.6 }}>

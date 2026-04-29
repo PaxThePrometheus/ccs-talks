@@ -39,6 +39,7 @@ export function AccountCenterModal({ open, onCancel }) {
     <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 540, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
       <div onClick={onCancel} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)" }} />
       <div
+        className="ccs-account-modal"
         style={{
           position: "relative",
           width: "min(1020px, 96vw)",
@@ -56,7 +57,7 @@ export function AccountCenterModal({ open, onCancel }) {
         }}
       >
         {/* Sidebar */}
-        <aside className="ccs-scroll" style={{ borderRight: "1px solid rgba(255,255,255,0.10)", padding: 14, display: "flex", flexDirection: "column", gap: 4, overflowY: "auto" }}>
+        <aside className="ccs-scroll ccs-account-aside" style={{ borderRight: "1px solid rgba(255,255,255,0.10)", padding: 14, display: "flex", flexDirection: "column", gap: 4, overflowY: "auto" }}>
           <div style={{ fontWeight: 900, fontSize: 14, letterSpacing: "-0.2px", padding: "8px 6px 12px" }}>Account Center</div>
           {SECTIONS.map((s) => (
             <button

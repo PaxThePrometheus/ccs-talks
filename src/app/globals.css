@@ -81,21 +81,25 @@ body {
 }
 
 /* ---------- Themed selects (dropdowns) ----------
-   <select> in both modes inherits weird browser-native colors. We override the
-   closed-state colors universally and the option list per-mode. The native
-   dropdown panel itself is OS-rendered, so we set option { background, color }
-   which most browsers honor. */
+   <select> in both modes inherits weird browser-native colors. We compose the
+   chevron + fill in a single `background:` shorthand so it stays positioned
+   in the right gutter and never tiles. The native option panel is rendered by
+   the OS, so we set `option { background, color }` which most browsers honor.
+
+   IMPORTANT: when using `background-color` + a separate `background-image`,
+   the shorthand `background: !important` from somewhere else can wipe your
+   repeat/position/size. We avoid that by using the shorthand exclusively. */
 .ccs-dark select {
-  background: rgba(30, 0, 12, 0.85) !important;
-  color: #f4ecec !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
   appearance: none;
   -webkit-appearance: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%23ff96a6' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>") !important;
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  background-size: 12px;
-  padding-right: 30px;
+  -moz-appearance: none;
+  color: #f4ecec !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 12px !important;
+  padding-right: 30px !important;
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%23ff96a6' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>") no-repeat right 10px center / 12px 12px,
+    rgba(30, 0, 12, 0.85) !important;
 }
 .ccs-dark select option,
 .ccs-dark select optgroup {
@@ -105,11 +109,14 @@ body {
 .ccs-light select {
   appearance: none;
   -webkit-appearance: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%23c0002a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>") !important;
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  background-size: 12px;
-  padding-right: 30px;
+  -moz-appearance: none;
+  color: #2a0010 !important;
+  border: 1px solid rgba(60, 0, 20, 0.18) !important;
+  border-radius: 12px !important;
+  padding-right: 30px !important;
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%23c0002a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>") no-repeat right 10px center / 12px 12px,
+    rgba(255, 255, 255, 0.92) !important;
 }
 .ccs-light select option,
 .ccs-light select optgroup {
@@ -117,9 +124,183 @@ body {
   color: #2a0010 !important;
 }
 
+/* IE / Edge legacy still draw their own chevron arrow on top of ours. Hide it. */
+.ccs-dark select::-ms-expand,
+.ccs-light select::-ms-expand { display: none; }
+
 /* In light mode, the inline color="#fff" on text in headers becomes invisible
    on white-ish surfaces. Override common offenders inside light-mode panels
    that we explicitly tag as ccs-onlight, but otherwise keep most components
    self-contained via the tokens system. */
+
+/* ============================================================
+   RESPONSIVE LAYOUT
+   ============================================================
+   Most screens use fixed positioning offsetted by the sidebar
+   (`left: 280`) and the right rail (`right: 320`). We expose those
+   as CSS variables so a single media query can collapse them on
+   smaller viewports without touching every screen.
+
+   Breakpoints:
+     - mobile : <= 720px  (sidebar collapses to drawer, no rail)
+     - tablet : <= 1080px (right rail hidden; sidebar still visible)
+*/
+:root {
+  --ccs-shell-left: 280px;
+  --ccs-rail-right: 320px;
+  --ccs-sidebar-w: 280px;
+  --ccs-rail-w: 320px;
+  --ccs-shell-pad-x: 2rem;
+}
+@media (max-width: 1080px) {
+  :root {
+    --ccs-rail-right: 0px;
+    --ccs-rail-w: 0px;
+  }
+}
+@media (max-width: 720px) {
+  :root {
+    --ccs-shell-left: 0px;
+    --ccs-sidebar-w: 0px;
+    --ccs-shell-pad-x: 1rem;
+  }
+}
+
+/* Sidebar drawer behaviour: on mobile, slides off-screen unless `is-open`. */
+.ccs-sidebar { transition: transform 0.25s ease; will-change: transform; }
+@media (max-width: 720px) {
+  .ccs-sidebar {
+    transform: translateX(-100%);
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.45);
+  }
+  .ccs-sidebar.is-open { transform: translateX(0); }
+}
+
+/* Hamburger toggle — only visible on mobile shells. */
+.ccs-hamburger { display: none; }
+@media (max-width: 720px) {
+  .ccs-hamburger {
+    display: inline-flex;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 80;
+    width: 42px;
+    height: 42px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 18px;
+    font-weight: 900;
+    backdrop-filter: blur(12px);
+  }
+}
+
+/* Backdrop behind the sidebar drawer (only renders on mobile). */
+.ccs-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  display: none;
+}
+@media (max-width: 720px) {
+  .ccs-sidebar-backdrop.is-open { display: block; }
+}
+
+/* Reusable responsive helpers used across screens. */
+@media (max-width: 720px) {
+  .ccs-stack-mobile { grid-template-columns: 1fr !important; }
+  .ccs-hide-mobile  { display: none !important; }
+  .ccs-pad-mobile   { padding-left: 1rem !important; padding-right: 1rem !important; }
+}
+@media (max-width: 1080px) {
+  .ccs-stack-tablet { grid-template-columns: 1fr !important; }
+  .ccs-hide-tablet  { display: none !important; }
+}
+
+/* ============================================================
+   LOW-POWER MODE
+   ============================================================
+   When `useLowPower()` flags the device the root gets `.ccs-low-power`.
+   Backdrop-filter blur is the single biggest CSS cost on integrated GPUs
+   and mobile, so we cap any inline blur to ~6px. React renders camelCase
+   `backdropFilter` as the kebab-case `backdrop-filter` attribute, so this
+   attribute selector hits both Chromium and Safari. */
+.ccs-low-power [style*="backdrop-filter"] {
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+}
+
+/* Animated cards / panels get a compositor hint so transforms don't hit
+   the main thread paint phase. The contain rule lets the browser short-
+   circuit layout work that's outside the card's box. */
+.ccs-app [data-anim="card"] {
+  will-change: transform, opacity;
+  contain: layout paint;
+}
+
+/* Inline rail panels in ForumScreen are hidden on desktop because the floating
+   right rail covers them. They show up below the feed at <=1080px. */
+.ccs-rail-inline { display: none; }
+@media (max-width: 1080px) {
+  .ccs-rail-inline { display: block; }
+}
+
+/* Stop the profile aside (intro/badges) from sticking once the page has
+   stacked vertically — otherwise the aside hogs the viewport. */
+@media (max-width: 1080px) {
+  .ccs-profile-aside { position: static !important; }
+}
+
+/* Account Center modal: collapse the sidebar into a horizontal pill row on
+   small screens so the modal still fits and the body stays readable. */
+@media (max-width: 720px) {
+  .ccs-account-modal {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto 1fr !important;
+    height: 92vh !important;
+  }
+  .ccs-account-aside {
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    border-right: none !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.10) !important;
+    gap: 6px !important;
+    padding: 10px !important;
+  }
+  .ccs-account-aside > button {
+    flex: 0 0 auto !important;
+    white-space: nowrap;
+  }
+  .ccs-account-aside > div { display: none; }
+}
+
+/* On small screens the banner becomes shorter and the avatar centers on top
+   of the info plate so the layout stays balanced. */
+@media (max-width: 720px) {
+  .ccs-profile-banner-img { height: 180px !important; }
+  .ccs-profile-info-plate {
+    padding: 70px 16px 16px !important;
+    flex-direction: column;
+    align-items: center !important;
+    text-align: center;
+  }
+  .ccs-profile-info-plate .ccs-profile-avatar {
+    left: 50% !important;
+    transform: translateX(-50%);
+    top: -50px !important;
+    width: 100px !important;
+    height: 100px !important;
+  }
+  .ccs-profile-info-plate .ccs-profile-avatar > div:first-child {
+    width: 100px !important;
+    height: 100px !important;
+  }
+}
 
 

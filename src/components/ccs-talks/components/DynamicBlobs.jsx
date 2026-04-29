@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
+import { useLowPower } from "../useLowPower";
 
 function rand(min, max) {
   return Math.random() * (max - min) + min;
@@ -12,6 +13,9 @@ function clamp(v, a, b) {
 
 export function DynamicBlobs({ intensity = 1 }) {
   const canvasRef = useRef(null);
+  const { pixelRatioCap, fpsCap, blobMultiplier, blurMultiplier } = useLowPower();
+
+  const blobCount = Math.max(5, Math.round(12 * blobMultiplier));
   const blobs = useMemo(() => {
     const palette = [
       { c: [255, 86, 140], a: 0.16 },
@@ -21,7 +25,7 @@ export function DynamicBlobs({ intensity = 1 }) {
       { c: [210, 30, 90], a: 0.10 },
     ];
 
-    const n = 12; // more blobs -> more "lava lamp" feel
+    const n = blobCount;
     const arr = [];
     for (let i = 0; i < n; i++) {
       const p = palette[i % palette.length];
@@ -40,7 +44,7 @@ export function DynamicBlobs({ intensity = 1 }) {
       });
     }
     return arr;
-  }, []);
+  }, [blobCount]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -52,9 +56,14 @@ export function DynamicBlobs({ intensity = 1 }) {
     let w = 0;
     let h = 0;
     let dpr = 1;
+    let paused = false;
+    const minFrameMs = 1000 / fpsCap;
+    let lastFrame = 0;
 
     const resize = () => {
-      dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      // Cap pixel ratio so the canvas blur step doesn't have 4× pixels to chew
+      // through on Retina mobile. The blur dominates wall-clock time here.
+      dpr = Math.max(1, Math.min(pixelRatioCap, window.devicePixelRatio || 1));
       w = Math.floor(window.innerWidth);
       h = Math.floor(window.innerHeight);
       canvas.width = Math.floor(w * dpr);
@@ -67,13 +76,21 @@ export function DynamicBlobs({ intensity = 1 }) {
     resize();
     window.addEventListener("resize", resize);
 
+    const onVisibility = () => { paused = document.visibilityState === "hidden"; };
+    document.addEventListener("visibilitychange", onVisibility);
+
     const tick = (t) => {
+      raf = requestAnimationFrame(tick);
+      if (paused) return;
+      if (t - lastFrame < minFrameMs - 0.5) return;
+      lastFrame = t;
+
       const time = t * 0.001;
       ctx.clearRect(0, 0, w, h);
 
       // "metaball" look: strong blur + additive + slight threshold vibe via bright core
       ctx.globalCompositeOperation = "lighter";
-      ctx.filter = `blur(${Math.round(72 * intensity)}px)`;
+      ctx.filter = `blur(${Math.round(72 * intensity * blurMultiplier)}px)`;
 
       // stronger pull between blobs so merging is obvious
       for (let i = 0; i < blobs.length; i++) {
@@ -128,7 +145,7 @@ export function DynamicBlobs({ intensity = 1 }) {
       }
 
       // add a sharper core pass to sell the "lava lamp" blobs
-      ctx.filter = `blur(${Math.round(20 * intensity)}px)`;
+      ctx.filter = `blur(${Math.round(20 * intensity * blurMultiplier)}px)`;
       for (const b of blobs) {
         const rr = (b.r * 0.34) + (b.r2 * 0.18) * (0.5 + 0.5 * Math.sin(time * 0.9 + b.phase));
         const cx = b.x * w;
@@ -145,16 +162,15 @@ export function DynamicBlobs({ intensity = 1 }) {
 
       ctx.filter = "none";
       ctx.globalCompositeOperation = "source-over";
-
-      raf = requestAnimationFrame(tick);
     };
 
     raf = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [blobs, intensity]);
+  }, [blobs, intensity, pixelRatioCap, fpsCap, blurMultiplier]);
 
   return (
     <canvas

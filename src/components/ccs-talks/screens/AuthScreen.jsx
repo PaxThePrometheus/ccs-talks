@@ -71,9 +71,10 @@ export function AuthScreen({ mode, setPage }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", paddingTop: 68 }}>
-      {/* Left: marketing copy (so the auth screen feels like a product, not a form) */}
-      <aside style={{ display: "flex", flexDirection: "column", justifyContent: "center", padding: "2rem 3rem", color: tokens.text }}>
+    <div className="ccs-stack-tablet" style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", paddingTop: 68 }}>
+      {/* Left: marketing copy. On tablet/mobile we stack and the marketing
+          column is hidden to give the form full width. */}
+      <aside className="ccs-hide-tablet" style={{ display: "flex", flexDirection: "column", justifyContent: "center", padding: "2rem 3rem", color: tokens.text }}>
         <div style={{ maxWidth: 520 }}>
           <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: "0.18em", color: tokens.textMuted }}>{APP_CONFIG.brand.name.toUpperCase()}</div>
           <h1 style={{ fontSize: 40, lineHeight: 1.05, fontWeight: 950, letterSpacing: "-1px", margin: "10px 0 14px", color: tokens.textStrong }}>

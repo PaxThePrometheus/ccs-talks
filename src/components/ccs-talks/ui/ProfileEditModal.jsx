@@ -87,7 +87,7 @@ export function ProfileEditModal({ open, profile, onCancel, onSave }) {
           </div>
         </div>
 
-        <div style={{ padding: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="ccs-stack-mobile" style={{ padding: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           {fields.map(([k, label]) => (
             <div key={k} style={{ gridColumn: k === "bio" ? "1 / -1" : "auto" }}>
               <div style={{ fontSize: 12, color: "rgba(240,220,220,0.70)", marginBottom: 6 }}>{label}</div>

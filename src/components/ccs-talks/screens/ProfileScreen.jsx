@@ -56,12 +56,12 @@ export function ProfileScreen() {
       style={{
         position: "fixed",
         top: 0,
-        left: 280,
+        left: "var(--ccs-shell-left)",
         right: 0,
         bottom: 0,
         overflowY: "auto",
         overflowX: "hidden",
-        padding: "1.75rem 2rem 2.5rem",
+        padding: "1.75rem var(--ccs-shell-pad-x) 2.5rem",
         borderLeft: `1px solid ${tokens.divider}`,
         color: tokens.text,
       }}
@@ -69,8 +69,8 @@ export function ProfileScreen() {
       <div style={{ maxWidth: 1080, margin: "0 auto" }}>
         {/* Banner: taller, no overlay text. Avatar floats and overlaps the
             info plate below — so name/badges no longer cover the banner. */}
-        <div style={{ position: "relative", borderRadius: 22, overflow: "hidden", border: `1px solid ${tokens.cardBorder}`, boxShadow: isLight ? "0 14px 32px rgba(60,0,20,0.14)" : "0 22px 70px rgba(0,0,0,0.35)" }}>
-          <div style={{ height: 320, ...bannerStyle }} />
+        <div className="ccs-profile-banner" style={{ position: "relative", borderRadius: 22, overflow: "hidden", border: `1px solid ${tokens.cardBorder}`, boxShadow: isLight ? "0 14px 32px rgba(60,0,20,0.14)" : "0 22px 70px rgba(0,0,0,0.35)" }}>
+          <div className="ccs-profile-banner-img" style={{ height: 320, ...bannerStyle }} />
           {/* top → bottom fade so the bottom blends into the info plate */}
           <div
             aria-hidden="true"
@@ -91,6 +91,7 @@ export function ProfileScreen() {
         {/* Info plate: avatar overlaps upward, info+actions are vertically
             centered along the avatar's middle. */}
         <div
+          className="ccs-profile-info-plate"
           style={{
             position: "relative",
             marginTop: -56,
@@ -112,6 +113,7 @@ export function ProfileScreen() {
           <button
             onClick={() => setEditingAvatar(true)}
             title="Edit avatar"
+            className="ccs-profile-avatar"
             style={{
               position: "absolute",
               left: 18,
@@ -213,8 +215,8 @@ export function ProfileScreen() {
           ))}
         </div>
 
-        <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "360px 1fr", gap: 16, alignItems: "start" }}>
-          <div style={{ position: "sticky", top: 16, alignSelf: "start" }}>
+        <div className="ccs-stack-tablet" style={{ marginTop: 14, display: "grid", gridTemplateColumns: "360px 1fr", gap: 16, alignItems: "start" }}>
+          <div className="ccs-profile-aside" style={{ position: "sticky", top: 16, alignSelf: "start" }}>
             <div style={panelStyle(tokens, isLight)}>
               <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.2px" }}>Intro</div>
               <div style={{ marginTop: 8, color: tokens.textMuted, fontSize: 13, lineHeight: 1.6 }}>{user.bio}</div>

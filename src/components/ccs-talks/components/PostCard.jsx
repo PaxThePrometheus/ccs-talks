@@ -23,7 +23,7 @@ export function PostCard({
   const isLight = prefs.mode === "light";
 
   useEffect(() => {
-    if (typeof window === "undefined" || !cardRef.current) return;
+    if (typeof window === "undefined" || !cardRef.current) return undefined;
     if (gsapLoaded && window.gsap && !prefs.reduceMotion) {
       // Apple-y bounce: small overshoot, kept short and tasteful.
       window.gsap.fromTo(
@@ -31,9 +31,14 @@ export function PostCard({
         { opacity: 0, y: 22, scale: 0.965 },
         { opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.6)" }
       );
-    } else {
-      cardRef.current.style.opacity = "1";
+      return undefined;
     }
+    cardRef.current.style.opacity = "1";
+    // Belt-and-braces: if gsap arrives later, also make sure we end up visible.
+    const id = setTimeout(() => {
+      if (cardRef.current) cardRef.current.style.opacity = "1";
+    }, 1200);
+    return () => clearTimeout(id);
   }, [gsapLoaded, post.id, prefs.reduceMotion]);
 
   const tagColor = isLight
@@ -55,6 +60,7 @@ export function PostCard({
   return (
     <div
       ref={cardRef}
+      data-anim="card"
       style={{
         background: tokens.cardBg,
         border: `1px solid ${tokens.cardBorder}`,

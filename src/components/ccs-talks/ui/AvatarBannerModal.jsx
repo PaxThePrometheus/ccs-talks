@@ -73,7 +73,7 @@ export function AvatarBannerModal({ open, profile, onCancel, onSave }) {
           </div>
         </div>
 
-        <div style={{ padding: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div className="ccs-stack-mobile" style={{ padding: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <div style={{ gridColumn: "1 / -1" }}>
             <Preview profile={draft} />
           </div>

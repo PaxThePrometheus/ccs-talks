@@ -6,7 +6,7 @@ import { THEME } from "../theme";
 import { useAppState } from "../state/AppState";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 
-export function Sidebar({ setPage, activeKey = "forum" }) {
+export function Sidebar({ setPage, activeKey = "forum", mobileOpen = false, onMobileClose }) {
   const navItems = APP_CONFIG.nav.sidebarPrimary;
   const bottom = APP_CONFIG.nav.sidebarSecondary;
   const { prefs, toggleMode, profile, signOut, isAuthed } = useAppState();
@@ -26,14 +26,16 @@ export function Sidebar({ setPage, activeKey = "forum" }) {
       }
     }
     setPage(key);
+    onMobileClose?.();
   };
 
   return (
     <div
+      className={`ccs-sidebar${mobileOpen ? " is-open" : ""}`}
       style={{
         width: 280,
-        minHeight: "100vh",
-        background: isLight ? "rgba(255,255,255,0.78)" : "rgba(30,0,12,0.7)",
+        height: "100vh",
+        background: isLight ? "rgba(255,255,255,0.92)" : "rgba(30,0,12,0.92)",
         backdropFilter: "blur(12px)",
         borderRight: `1px solid ${isLight ? "rgba(60,0,20,0.14)" : THEME.colors.divider}`,
         display: "flex",
@@ -42,13 +44,13 @@ export function Sidebar({ setPage, activeKey = "forum" }) {
         position: "fixed",
         top: 0,
         left: 0,
-        zIndex: 50,
+        zIndex: 60,
         color: isLight ? "#2a0010" : "#f4ecec",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
         <span
-          onClick={() => setPage("landing")}
+          onClick={() => { setPage("landing"); onMobileClose?.(); }}
           title="Back to landing"
           style={{
             fontWeight: 900,
@@ -142,7 +144,7 @@ export function Sidebar({ setPage, activeKey = "forum" }) {
         {/* Admin panel: only when signed in AND role is Moderator/Admin. */}
         {showAdmin && (
           <div
-            onClick={() => setPage("admin")}
+            onClick={() => { setPage("admin"); onMobileClose?.(); }}
             style={{
               display: "flex",
               alignItems: "center",

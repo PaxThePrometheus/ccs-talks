@@ -32,9 +32,9 @@ export function AdminScreen() {
     <div
       className="ccs-scroll"
       style={{
-        position: "fixed", top: 0, left: 280, right: 0, bottom: 0,
+        position: "fixed", top: 0, left: "var(--ccs-shell-left)", right: 0, bottom: 0,
         overflowY: "auto", overflowX: "hidden",
-        padding: "1.75rem 2rem 2.5rem",
+        padding: "1.75rem var(--ccs-shell-pad-x) 2.5rem",
         borderLeft: `1px solid ${tokens.divider}`,
         color: tokens.text,
       }}
@@ -48,7 +48,7 @@ export function AdminScreen() {
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by id, content, user…" style={{ ...inp(tokens, 280) }} />
         </div>
 
-        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "220px 1fr", gap: 14, alignItems: "start" }}>
+        <div className="ccs-stack-mobile" style={{ marginTop: 12, display: "grid", gridTemplateColumns: "220px 1fr", gap: 14, alignItems: "start" }}>
           <aside style={{ position: "sticky", top: 14, alignSelf: "start", display: "flex", flexDirection: "column", gap: 4, padding: 8, borderRadius: 16, border: `1px solid ${tokens.cardBorder}`, background: tokens.cardBg, backdropFilter: "blur(12px)" }}>
             {SECTIONS.map((s) => (
               <button key={s.key} onClick={() => setSection(s.key)} style={navItem(section === s.key, tokens, isLight)}>

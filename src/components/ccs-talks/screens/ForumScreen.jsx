@@ -1,6 +1,7 @@
 "use client";
 
 import { defaultLandingCms } from "@/lib/ccs/landingDefaults";
+import { CCS_POST_BODY_MAX_CHARS } from "@/lib/ccs/postContentLimits";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/ccsApi";
 import { GSAP_CDN } from "../cdn";
@@ -80,7 +81,10 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
       await publishPost(draft.trim(), composeTag || prefs.defaultPostTag || "General", composeImage);
       setDraft("");
       setComposeImage("");
-    } catch {
+    } catch (e) {
+      if (typeof window !== "undefined" && e?.status === 413) {
+        window.alert(String(e.message || `Posts are limited to ${CCS_POST_BODY_MAX_CHARS.toLocaleString()} characters.`));
+      }
       // Network / validation — keep draft so the user doesn’t lose it.
     }
   };
@@ -232,6 +236,7 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
               disabled={readOnly}
               onSubmit={handlePublish}
               publishLabel={readOnly ? "Sign in" : "Publish"}
+              maxBodyChars={CCS_POST_BODY_MAX_CHARS}
               tokens={tokens}
               isLight={isLight}
               minRows={2}

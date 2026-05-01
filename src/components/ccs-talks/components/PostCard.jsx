@@ -1,5 +1,6 @@
 "use client";
 
+import { truncateForFeedPreview } from "@/lib/ccs/postContentLimits";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GSAP_CDN } from "../cdn";
 import { useScript } from "../useScript";
@@ -31,6 +32,8 @@ export function PostCard({
   const calmMotion = !!(prefs.reduceMotion || prefs.reduceEffects);
   const liftHover = !(prefs.reduceMotion || prefs.reduceEffects);
   const handleDir = useMemo(() => buildHandleDirectory(users), [users]);
+
+  const { text: previewMarkdown, truncated } = useMemo(() => truncateForFeedPreview(post.content), [post.content]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !cardRef.current) return undefined;
@@ -171,55 +174,97 @@ export function PostCard({
 
       <div style={{ height: 1, background: dividerColor }} />
 
-      <div style={{ padding: "0.95rem 1.2rem 1rem" }}>
-        <div style={{ fontSize: 15, margin: 0 }}>
+      {/* Click body (except inline http links / mentions) opens full thread. Preview length capped in `truncateForFeedPreview`. */}
+      <div
+        className="ccs-post-body-hit"
+        role={onOpenComments ? "button" : undefined}
+        tabIndex={onOpenComments ? 0 : undefined}
+        aria-label={
+          onOpenComments
+            ? `${truncated ? "Preview · " : ""}Open thread${typeof post.comments === "number" ? `, ${post.comments} comments` : ""}`
+            : undefined
+        }
+        title={truncated ? "Click to open full post and comments" : onOpenComments ? "Open thread" : undefined}
+        onKeyDown={(ev) => {
+          if (!onOpenComments) return;
+          if (ev.key === "Enter" || ev.key === " ") {
+            ev.preventDefault();
+            onOpenComments(post.id);
+          }
+        }}
+        onClick={(ev) => {
+          if (!onOpenComments) return;
+          if (ev.target.closest("a[href]")) return;
+          onOpenComments(post.id);
+        }}
+        onMouseEnter={(e) => {
+          if (!onOpenComments) return;
+          e.currentTarget.style.background = isLight ? "rgba(60,0,20,0.035)" : "rgba(255,255,255,0.045)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "transparent";
+        }}
+        style={{
+          padding: "0.95rem 1.2rem 1rem",
+          cursor: onOpenComments ? "pointer" : undefined,
+          transition: "background 0.15s ease",
+        }}
+      >
+        <div style={{ fontSize: 15, margin: 0, pointerEvents: "auto" }}>
           <CcsMarkdown
-            source={post.content}
+            source={previewMarkdown}
             accentColor={tokens.accent}
             handleToUserId={handleDir}
             onVisitUser={readOnly ? undefined : visitUserProfile}
             tokens={tokens}
           />
         </div>
-        {post.imageUrl ? (
-          <div style={{ marginTop: 10 }}>
-            <button
-              type="button"
-              onClick={() =>
-                setImageViewer({
-                  src: post.imageUrl,
-                  title: post.content?.trim().slice(0, 48) || "Post",
-                })
-              }
-              title="View image"
-              style={{
-                padding: 0,
-                margin: 0,
-                border: "none",
-                background: "transparent",
-                cursor: "zoom-in",
-                display: "block",
-                maxWidth: "100%",
-                borderRadius: 12,
-              }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element -- user content */}
-              <img
-                src={post.imageUrl}
-                alt=""
-                style={{
-                  maxHeight: 360,
-                  maxWidth: "100%",
-                  borderRadius: 12,
-                  objectFit: "contain",
-                  border: `1px solid ${dividerColor}`,
-                  display: "block",
-                }}
-              />
-            </button>
+        {truncated ? (
+          <div style={{ marginTop: 10, fontSize: 12, fontWeight: 800, letterSpacing: "0.01em", color: tokens.accent }}>
+            Tap to expand · {typeof post.comments === "number" ? `${post.comments} comment${post.comments === 1 ? "" : "s"}` : "comments"}
           </div>
         ) : null}
       </div>
+
+      {post.imageUrl ? (
+        <div style={{ padding: "0 1.2rem 1rem", marginTop: 6 }}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setImageViewer({
+                src: post.imageUrl,
+                title: post.content?.trim().slice(0, 48) || "Post",
+              });
+            }}
+            title="View image"
+            style={{
+              padding: 0,
+              margin: 0,
+              border: "none",
+              background: "transparent",
+              cursor: "zoom-in",
+              display: "block",
+              maxWidth: "100%",
+              borderRadius: 12,
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- user content */}
+            <img
+              src={post.imageUrl}
+              alt=""
+              style={{
+                maxHeight: 360,
+                maxWidth: "100%",
+                borderRadius: 12,
+                objectFit: "contain",
+                border: `1px solid ${dividerColor}`,
+                display: "block",
+              }}
+            />
+          </button>
+        </div>
+      ) : null}
 
       <div style={{ height: 1, background: dividerColor }} />
 

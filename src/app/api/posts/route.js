@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
+import { CCS_POST_BODY_MAX_CHARS } from "@/lib/ccs/postContentLimits";
 import { createUserPost, fetchPublicFeed, resolveViewerFromSession } from "@/lib/ccs/store";
 
 export const dynamic = "force-dynamic";
@@ -35,12 +36,24 @@ export async function POST(request) {
   const tag = String(payload.tag || "General").trim() || "General";
   const imageUrl = typeof payload.imageUrl === "string" ? payload.imageUrl : "";
   if (!content) return NextResponse.json({ error: "Post content is empty." }, { status: 400 });
+  if (content.length > CCS_POST_BODY_MAX_CHARS) {
+    return NextResponse.json(
+      { error: `Post is too long (max ${CCS_POST_BODY_MAX_CHARS.toLocaleString()} characters).` },
+      { status: 413 }
+    );
+  }
 
   try {
     const viewer = await resolveViewerFromSession(token);
     if (!viewer) return NextResponse.json({ error: "Sign in to post." }, { status: 401 });
 
     const created = await createUserPost(viewer.id, content, tag, imageUrl);
+    if (created?.contentTooLarge) {
+      return NextResponse.json(
+        { error: `Post is too long (max ${CCS_POST_BODY_MAX_CHARS.toLocaleString()} characters).` },
+        { status: 413 }
+      );
+    }
     if (created?.imageTooLarge) {
       return NextResponse.json({ error: "Attached image is too large or invalid." }, { status: 413 });
     }

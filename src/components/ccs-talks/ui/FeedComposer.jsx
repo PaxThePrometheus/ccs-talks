@@ -36,6 +36,8 @@ export function FeedComposer({
   disabled = false,
   onSubmit,
   publishLabel = "Publish",
+  /** When set (e.g. forum posts), enforces textarea `maxLength` and shows `used / max` counter. */
+  maxBodyChars = null,
   tokens,
   isLight,
   minRows = 2,
@@ -57,6 +59,13 @@ export function FeedComposer({
       .filter((u) => !q || u.handle.toLowerCase().includes(q) || u.name.toLowerCase().includes(q))
       .slice(0, 8);
   }, [mention, userList]);
+
+  const usedChars = typeof text === "string" ? text.length : 0;
+  const overHardLimit = !!(maxBodyChars && usedChars > maxBodyChars);
+  const publishingDisabled =
+    !!disabled ||
+    !!(maxBodyChars && !String(text || "").trim()) ||
+    overHardLimit;
 
   const syncMention = useCallback(() => {
     const el = taRef.current;
@@ -167,9 +176,14 @@ export function FeedComposer({
         ref={taRef}
         value={text}
         disabled={disabled}
+        {...(typeof maxBodyChars === "number" && maxBodyChars > 0 ? { maxLength: maxBodyChars } : {})}
         rows={minRows}
         onChange={(e) => {
-          setText(e.target.value);
+          let v = e.target.value;
+          if (typeof maxBodyChars === "number" && maxBodyChars > 0 && v.length > maxBodyChars) {
+            v = v.slice(0, maxBodyChars);
+          }
+          setText(v);
           syncMention();
         }}
         onKeyUp={syncMention}
@@ -210,6 +224,25 @@ export function FeedComposer({
           fontFamily: "inherit",
         }}
       />
+
+      {typeof maxBodyChars === "number" && maxBodyChars > 0 ? (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 11,
+            color: overHardLimit ? "#d04050" : tokens.textMuted,
+            marginTop: -4,
+          }}
+        >
+          <span>{overHardLimit ? "Over limit — shorten your post." : `Up to ${maxBodyChars.toLocaleString()} characters`}</span>
+          <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 800 }} aria-live="polite">
+            {usedChars.toLocaleString()} / {maxBodyChars.toLocaleString()}
+          </span>
+        </div>
+      ) : null}
 
       {mention && mentionPicks.length > 0 ? (
         <div
@@ -301,8 +334,11 @@ export function FeedComposer({
         <div style={{ flex: 1 }} />
         <button
           type="button"
-          disabled={disabled}
-          onClick={() => onSubmit?.()}
+          disabled={publishingDisabled}
+          onClick={() => {
+            if (publishingDisabled) return;
+            onSubmit?.();
+          }}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -312,7 +348,8 @@ export function FeedComposer({
             color: "#fff",
             padding: "9px 18px",
             borderRadius: 12,
-            cursor: disabled ? "not-allowed" : "pointer",
+            cursor: publishingDisabled ? "not-allowed" : "pointer",
+            opacity: publishingDisabled ? 0.55 : 1,
             fontWeight: 800,
             fontSize: 13,
           }}

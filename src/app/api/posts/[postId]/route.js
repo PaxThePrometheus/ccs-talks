@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
+import { CCS_POST_BODY_MAX_CHARS } from "@/lib/ccs/postContentLimits";
 import { fetchSinglePostEnvelope, resolveViewerFromSession, updatePostBody } from "@/lib/ccs/store";
 
 export const dynamic = "force-dynamic";
@@ -31,12 +32,24 @@ export async function PATCH(request, ctx) {
   }
   const content = String(payload.content ?? "").trim();
   if (!content) return NextResponse.json({ error: "Content is empty." }, { status: 400 });
+  if (content.length > CCS_POST_BODY_MAX_CHARS) {
+    return NextResponse.json(
+      { error: `Post is too long (max ${CCS_POST_BODY_MAX_CHARS.toLocaleString()} characters).` },
+      { status: 413 }
+    );
+  }
 
   const viewer = await resolveViewerFromSession(token);
   if (!viewer) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
   const updated = await updatePostBody(postId, viewer.id, content);
 
+  if (updated?.contentTooLarge) {
+    return NextResponse.json(
+      { error: `Post is too long (max ${CCS_POST_BODY_MAX_CHARS.toLocaleString()} characters).` },
+      { status: 413 }
+    );
+  }
   if (updated?.missing) return NextResponse.json({ error: "Not found." }, { status: 404 });
   if (updated?.forbidden) return NextResponse.json({ error: "You can only edit your own posts." }, { status: 403 });
 

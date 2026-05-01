@@ -1,6 +1,7 @@
 "use client";
 
 import { defaultLandingCms } from "@/lib/ccs/landingDefaults";
+import { CCS_POST_BODY_MAX_CHARS } from "@/lib/ccs/postContentLimits";
 import { badgeAccentForLabel, badgePillColors } from "@/lib/ccs/badgeColors";
 import { statusBadgeDisplayLabels } from "@/lib/ccs/statusBadges";
 import { useMemo, useState } from "react";
@@ -555,11 +556,17 @@ export function ProfileScreen() {
                             await publishPost(v, composeTag || prefs.defaultPostTag || "General", composeImage);
                             setDraft("");
                             setComposeImage("");
-                          } catch {
+                          } catch (e) {
+                            if (typeof window !== "undefined" && e?.status === 413) {
+                              window.alert(
+                                String(e.message || `Posts are limited to ${CCS_POST_BODY_MAX_CHARS.toLocaleString()} characters.`)
+                              );
+                            }
                             /* keep draft */
                           }
                         }}
                         publishLabel="Post"
+                        maxBodyChars={CCS_POST_BODY_MAX_CHARS}
                         tokens={tokens}
                         isLight={isLight}
                         minRows={2}

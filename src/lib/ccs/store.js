@@ -24,6 +24,7 @@ import {
   MAX_POST_COMMENT_IMAGE_DATA_URL_CHARS,
   MAX_PROFILE_MEDIA_DATA_URL_CHARS,
 } from "./imageUploadLimits";
+import { CCS_POST_BODY_MAX_CHARS } from "./postContentLimits";
 import * as schema from "./schema";
 
 const PRESENCE_WINDOW_MS = 120_000;
@@ -323,6 +324,8 @@ export async function fetchSinglePostEnvelope(viewerUserId, postId) {
 }
 
 export async function createUserPost(viewerUserId, content, tag, imageUrl = "") {
+  const body = String(content || "").trim();
+  if (body.length > CCS_POST_BODY_MAX_CHARS) return { contentTooLarge: true };
   const db = await getDb();
   let clampedImage = "";
   try {
@@ -349,12 +352,14 @@ export async function createUserPost(viewerUserId, content, tag, imageUrl = "") 
 }
 
 export async function updatePostBody(postId, ownerUserId, content) {
+  const body = String(content || "").trim();
+  if (body.length > CCS_POST_BODY_MAX_CHARS) return { contentTooLarge: true };
   const db = await getDb();
   const [existing] = await db.select().from(schema.ccsPosts).where(eq(schema.ccsPosts.id, postId)).limit(1);
   if (!existing) return { missing: true };
   if (existing.userId !== ownerUserId) return { forbidden: true };
 
-  await db.update(schema.ccsPosts).set({ content }).where(eq(schema.ccsPosts.id, postId));
+  await db.update(schema.ccsPosts).set({ content: body }).where(eq(schema.ccsPosts.id, postId));
 
   return { post: await clientPostPreview(ownerUserId, postId) };
 }

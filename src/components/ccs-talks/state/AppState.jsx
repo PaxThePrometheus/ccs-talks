@@ -436,8 +436,11 @@ export function AppStateProvider({ children }) {
       try {
         const out = await api.patchPost(postId, String(patch.content));
         if (out?.post) upsertFeedPost(out.post);
-      } catch {
-        /* Moderator edits on other authors' posts are expected to stay local-only for now. */
+      } catch (e) {
+        if (typeof window !== "undefined" && e?.status === 413) {
+          window.alert(String(e.message || "Edited post exceeds the maximum length."));
+        }
+        /* Moderator edits on other authors' posts may stay local-only on other failures. */
       }
     }
   };

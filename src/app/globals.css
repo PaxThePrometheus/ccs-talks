@@ -46,6 +46,29 @@ body {
   background: linear-gradient(180deg, rgba(255, 96, 128, 0.34), rgba(155, 0, 40, 0.44));
 }
 
+/* Admin console — diagnostic tint (profiler-adjacent) */
+.ccs-admin-bar-scroll {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(110, 200, 255, 0.45) rgba(20, 0, 14, 0.45);
+}
+.ccs-admin-bar-scroll::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+.ccs-admin-bar-scroll::-webkit-scrollbar-track {
+  background: rgba(8, 0, 12, 0.35);
+  border-radius: 999px;
+}
+.ccs-admin-bar-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(124, 94, 255, 0.35), rgba(62, 214, 220, 0.4));
+  border: 2px solid rgba(8, 0, 14, 0.6);
+  border-radius: 999px;
+}
+.ccs-admin-bar-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(154, 128, 255, 0.45), rgba(92, 234, 230, 0.5));
+}
+
 /* (overlay removed) */
 
 @keyframes ccsShimmer {

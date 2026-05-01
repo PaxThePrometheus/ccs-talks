@@ -119,7 +119,8 @@ export const panel = {
   border: `1px solid ${adminTheme.border}`,
   background: adminTheme.surface,
   backdropFilter: "blur(12px)",
-  overflow: "hidden",
+  /** Allow anchored tooltips (fixed to body); clip only where needed inside rows. */
+  overflow: "visible",
 };
 export const panelHeader = { padding: "12px 16px", borderBottom: `1px solid ${adminTheme.border}`, fontWeight: 900, color: adminTheme.textStrong, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 };
 export const row = { padding: "12px 16px", borderTop: `1px solid ${adminTheme.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" };

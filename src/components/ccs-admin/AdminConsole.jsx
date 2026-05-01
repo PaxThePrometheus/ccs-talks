@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CcsMarkdown } from "@/components/ccs-talks/components/CcsMarkdown";
-import { badgeAccentForLabel, badgePillColors } from "@/lib/ccs/badgeColors";
+import { BADGE_REGISTRY_MAX, badgeAccentForLabel, badgePillColors, normalizeHexColor } from "@/lib/ccs/badgeColors";
 import { AdminLandingPane } from "./AdminLandingPane";
 import { applyMarkdownInsert, MarkdownToolbarRow } from "./markdownTools";
 import { adminTheme as t, btn, panel, panelHeader, row, tag } from "./adminUi";
@@ -31,31 +32,6 @@ async function jsonFetch(url, opts = {}) {
     throw err;
   }
   return data;
-}
-
-function serializeBadgeColorsText(map) {
-  if (!map || typeof map !== "object") return "";
-  return Object.entries(map)
-    .filter(([, v]) => typeof v === "string" && v.trim())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k} ${String(v).trim()}`)
-    .join("\n");
-}
-
-/** Lines like `Dean's list #FF6080` (label … hex). */
-function parseBadgeColorsText(text) {
-  const out = {};
-  const raw = text == null ? "" : String(text);
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const hm = trimmed.match(/^(.*?)\s+(#[0-9a-f]{3,6})\s*$/i);
-    if (!hm) continue;
-    const label = hm[1].trim();
-    if (!label) continue;
-    out[label] = hm[2];
-  }
-  return out;
 }
 
 /** Tokens for markdown preview in dark admin chrome. */
@@ -251,94 +227,93 @@ function OpsCard({ title, titleTip, lines, below }) {
 }
 
 function OverviewHoverTip({ tip, children }) {
+  const wrapRef = useRef(null);
   const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState({ top: 0, left: 0, width: 0, height: 0 });
+
+  const updateRect = useCallback(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updateRect();
+    const onMove = () => updateRect();
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [open, updateRect]);
+
   if (!tip) return children;
 
-  return (
-    <span
-      style={{ position: "relative", display: "inline-flex", verticalAlign: "middle" }}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onBlur={() => setOpen(false)}
-      tabIndex={0}
-    >
-      {children}
-      {open ? (
-        <span
-          role="tooltip"
-          style={{
-            position: "absolute",
-            zIndex: 50,
-            left: 0,
-            bottom: "calc(100% + 10px)",
-            minWidth: 200,
-            maxWidth: minVwPx(288),
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: `1px solid ${t.borderStrong}`,
-            background: "rgba(14,0,8,0.97)",
-            color: t.text,
-            fontSize: 12,
-            lineHeight: 1.45,
-            fontWeight: 500,
-            boxShadow: "0 14px 40px rgba(0,0,0,0.45)",
-          }}
-        >
-          {tip}
-        </span>
-      ) : null}
-    </span>
-  );
-}
+  const vw = typeof window !== "undefined" ? window.innerWidth : 400;
+  const tw = Math.min(300, Math.max(220, vw - 24));
+  const cx = rect.left + rect.width / 2 - tw / 2;
+  const left = Math.max(10, Math.min(cx, vw - tw - 10));
+  const gap = 10;
+  const preferAboveTop = rect.top - gap;
 
-function minVwPx(px) {
-  if (typeof window === "undefined") return `${Math.min(px, 320)}px`;
-  return `${Math.min(px, Math.floor(window.innerWidth * 0.88))}px`;
-}
-
-/** Normalized area + line SVG (responsive). */
-function SparklineSvg({ values, strokeColor, fillColor = "rgba(255,96,128,0.14)", height = 54 }) {
-  let arr = Array.isArray(values) ? values.filter((v) => typeof v === "number" && Number.isFinite(v)) : [];
-  if (arr.length === 1) arr = [arr[0], arr[0]];
-  if (arr.length < 2) {
-    return (
-      <div style={{ height, borderRadius: 8, border: `1px dashed ${t.border}`, display: "flex", alignItems: "center", justifyContent: "center", color: t.muted, fontSize: 11, marginTop: 4 }}>
-        Collecting samples…
-      </div>
-    );
+  let topPx = preferAboveTop;
+  let transform = "translateY(-100%)";
+  if (preferAboveTop < 72) {
+    topPx = rect.bottom + gap;
+    transform = "none";
   }
 
-  const W = 220;
-  const H = height;
-  const pad = 2;
-  const min = Math.min(...arr),
-    max = Math.max(...arr);
-  const range = Math.max(max - min, 1e-9);
-
-  const toY = (v) => H - pad - ((v - min) / range) * (H - pad * 2);
-  let d = "";
-  arr.forEach((v, i) => {
-    const x = pad + (i / (arr.length - 1)) * (W - pad * 2);
-    const y = toY(v);
-    d += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
-  });
-  const y0 = H - pad;
-  const pathFill = `${d} L ${W - pad} ${y0} L ${pad} ${y0} Z`;
+  const tooltipNode =
+    open && typeof document !== "undefined"
+      ? createPortal(
+          <span
+            role="tooltip"
+            style={{
+              position: "fixed",
+              zIndex: 100000,
+              left,
+              top: topPx,
+              transform,
+              width: tw,
+              boxSizing: "border-box",
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: `1px solid ${t.borderStrong}`,
+              background: "rgba(14,0,8,0.97)",
+              color: t.text,
+              fontSize: 12,
+              lineHeight: 1.45,
+              fontWeight: 500,
+              boxShadow: "0 14px 40px rgba(0,0,0,0.45)",
+              pointerEvents: "none",
+            }}
+          >
+            {tip}
+          </span>,
+          document.body,
+        )
+      : null;
 
   return (
-    <svg
-      width="100%"
-      height={H}
-      viewBox={`0 0 ${W} ${H}`}
-      preserveAspectRatio="none"
-      style={{ display: "block", marginTop: 6, overflow: "visible" }}
-      aria-hidden
-    >
-      <path d={pathFill} fill={fillColor} stroke="none" />
-      <path d={d} fill="none" stroke={strokeColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-      <circle cx={W - pad} cy={toY(arr[arr.length - 1])} r={3.5} fill={strokeColor} opacity={0.95} vectorEffect="non-scaling-stroke" />
-    </svg>
+    <>
+      <span
+        ref={wrapRef}
+        style={{ display: "inline-flex", verticalAlign: "middle" }}
+        onMouseEnter={() => {
+          setOpen(true);
+        }}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        tabIndex={0}
+      >
+        {children}
+      </span>
+      {tooltipNode}
+    </>
   );
 }
 
@@ -383,10 +358,82 @@ function colorAlpha(cssColor, a) {
   return `rgba(255,96,128,${a})`;
 }
 
+/** Sample-aligned columns (profiler-style) — avoids stretched SVG artefacts. */
+function ProfilerSampleStrip({ values, accentColor = t.accent, height = 50, marginTop = 6 }) {
+  let arr = Array.isArray(values) ? values.filter((v) => typeof v === "number" && Number.isFinite(v)) : [];
+  if (arr.length === 1) arr = [arr[0], arr[0]];
+  if (arr.length < 2) {
+    return (
+      <div
+        style={{
+          height,
+          marginTop,
+          borderRadius: 10,
+          border: `1px dashed ${t.border}`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: t.muted,
+          fontSize: 11,
+          letterSpacing: "0.03em",
+        }}
+      >
+        Collecting samples…
+      </div>
+    );
+  }
+
+  const min = Math.min(...arr),
+    max = Math.max(...arr);
+  const range = Math.max(max - min, 1e-9);
+  const hi = accentColor || t.accent;
+  const glow = colorAlpha(hi, 0.42);
+  const lo = colorAlpha(hi, 0.62);
+
+  return (
+    <div
+      aria-hidden
+      style={{
+        display: "flex",
+        alignItems: "flex-end",
+        gap: 4,
+        height,
+        marginTop,
+        padding: "8px 6px",
+        borderRadius: 10,
+        border: `1px solid ${t.border}`,
+        background: `linear-gradient(180deg, rgba(62,214,220,0.07), transparent 62%), repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 14px), rgba(0,0,0,0.2)`,
+        boxSizing: "border-box",
+      }}
+    >
+      {arr.map((v, i) => {
+        const n = (v - min) / range;
+        const hPct = Math.max(18, Math.min(100, Math.round(Math.max(0, Math.min(1, n)) * 92 + 8)));
+        const last = i === arr.length - 1;
+        return (
+          <div
+            key={i}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              height: `${hPct}%`,
+              borderRadius: 4,
+              background: `linear-gradient(180deg, ${hi}, ${lo})`,
+              opacity: last ? 1 : 0.76,
+              boxShadow: last ? `0 0 12px ${glow}` : undefined,
+              boxSizing: "border-box",
+              border: last ? `1px solid ${colorAlpha(hi, 0.85)}` : "1px solid transparent",
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function StatCard({ title, tip, value, accent, tone, spark, accentColor }) {
   const valueColor = accent ? t.accent : tone === "warn" ? t.warn : tone === "muted" ? t.muted : t.textStrong;
   const stroke = accentColor || valueColor;
-  const fill = colorAlpha(stroke, 0.14);
   return (
     <div style={{ borderRadius: 16, border: `1px solid ${t.border}`, background: t.surface, backdropFilter: "blur(12px)", padding: "12px 14px 10px", display: "flex", flexDirection: "column", minHeight: 0 }}>
       <OverviewHoverTip tip={tip}>
@@ -407,7 +454,7 @@ function StatCard({ title, tip, value, accent, tone, spark, accentColor }) {
         </div>
       </OverviewHoverTip>
       <div style={{ color: valueColor, fontSize: 28, fontWeight: 950, marginTop: 4, lineHeight: 1.1 }}>{Number(value).toLocaleString()}</div>
-      <SparklineSvg values={spark} strokeColor={stroke} fillColor={fill} height={44} />
+      <ProfilerSampleStrip values={spark} accentColor={stroke} height={46} marginTop={6} />
     </div>
   );
 }
@@ -522,7 +569,7 @@ function OverviewPane({ onError }) {
       {history.length >= 2 ? (
         <section style={{ ...panel, marginTop: 10 }}>
           <header style={panelHeader}>
-            <OverviewHoverTip tip="Each line mixes the same snapshots as above. Hover card titles elsewhere for glossary text. Useful to correlate activity with memory drift.">
+            <OverviewHoverTip tip="Column strips use the same poll snapshots as the grid above. Hover card titles elsewhere for glossary text; useful to correlate activity with memory drift.">
               <span style={{ cursor: "help", borderBottom: `1px dashed ${t.border}` }}>Realtime trends</span>
             </OverviewHoverTip>
           </header>
@@ -531,31 +578,31 @@ function OverviewPane({ onError }) {
               <OverviewHoverTip tip="Community totals from the overview payload: users, posts, comments over time — watch for bursts after campaigns or scraping.">
                 <div style={{ fontSize: 11, fontWeight: 900, color: t.muted, marginBottom: 4, cursor: "help", width: "fit-content", borderBottom: `1px dashed ${t.border}` }}>Forum volume</div>
               </OverviewHoverTip>
-              <SparklineSvg values={sUsers} strokeColor={t.accent} />
+              <ProfilerSampleStrip values={sUsers} accentColor={t.accent} height={48} marginTop={4} />
               <div style={{ fontSize: 10, color: t.muted }}>Users</div>
-              <SparklineSvg values={sPosts} strokeColor="#ff6090" fillColor="rgba(255,96,144,0.12)" />
+              <ProfilerSampleStrip values={sPosts} accentColor="#ff6090" height={48} marginTop={4} />
               <div style={{ fontSize: 10, color: t.muted }}>Posts</div>
-              <SparklineSvg values={sComments} strokeColor="#b87aff" fillColor="rgba(184,122,255,0.14)" />
+              <ProfilerSampleStrip values={sComments} accentColor="#b87aff" height={48} marginTop={4} />
               <div style={{ fontSize: 10, color: t.muted }}>Comments</div>
             </div>
             <div>
               <OverviewHoverTip tip={OPS_HELP.memory}>
                 <div style={{ fontSize: 11, fontWeight: 900, color: t.muted, marginBottom: 4, cursor: "help", width: "fit-content", borderBottom: `1px dashed ${t.border}` }}>Memory</div>
               </OverviewHoverTip>
-              <SparklineSvg values={sRss} strokeColor={t.good} fillColor="rgba(123,224,160,0.14)" />
+              <ProfilerSampleStrip values={sRss} accentColor={t.good} height={48} marginTop={4} />
               <div style={{ fontSize: 10, color: t.muted }} title={OPS_HELP.rss}>{OPS_HELP.rss}</div>
-              <SparklineSvg values={sHeap} strokeColor={t.warn} fillColor="rgba(255,176,90,0.12)" />
+              <ProfilerSampleStrip values={sHeap} accentColor={t.warn} height={48} marginTop={4} />
               <div style={{ fontSize: 10, color: t.muted }} title={OPS_HELP.heap}>{OPS_HELP.heap}</div>
             </div>
             <div>
               <OverviewHoverTip tip="Database + operational counts: storage changes slowly unless bulk imports or vacuum; sessions jump with logins; audit climbs with moderator actions.">
                 <div style={{ fontSize: 11, fontWeight: 900, color: t.muted, marginBottom: 4, cursor: "help", width: "fit-content", borderBottom: `1px dashed ${t.border}` }}>Platform</div>
               </OverviewHoverTip>
-              <SparklineSvg values={sDbSz} strokeColor="#6ec8ff" fillColor="rgba(110,200,255,0.14)" />
+              <ProfilerSampleStrip values={sDbSz} accentColor="#6ec8ff" height={48} marginTop={4} />
               <div style={{ fontSize: 10, color: t.muted }} title={OPS_HELP.dbsize}>{OPS_HELP.dbsize}</div>
-              <SparklineSvg values={sSessActive} strokeColor="#ffa6c9" fillColor="rgba(255,166,201,0.12)" />
+              <ProfilerSampleStrip values={sSessActive} accentColor="#ffa6c9" height={48} marginTop={4} />
               <div style={{ fontSize: 10, color: t.muted }} title={OPS_HELP.sessionsActive}>{OPS_HELP.sessionsActive}</div>
-              <SparklineSvg values={sAudit} strokeColor="#c4b088" fillColor="rgba(196,176,136,0.12)" />
+              <ProfilerSampleStrip values={sAudit} accentColor="#c4b088" height={48} marginTop={4} />
               <div style={{ fontSize: 10, color: t.muted }} title={OPS_HELP.auditRows}>{OPS_HELP.auditRows}</div>
             </div>
           </div>
@@ -579,11 +626,7 @@ function OverviewPane({ onError }) {
                 titleTip={OPS_HELP.runtime}
                 lines={[`Node ${ops.server.node}`, `${ops.server.platform} · pid ${ops.server.pid}`, `Uptime ${fmtDuration(ops.server.uptimeSeconds)}`, `TZ ${ops.server.timeZone || "—"}`]}
                 below={
-                  <SparklineSvg
-                    values={extractHistorySeries(history, (s) => s.ops?.server?.uptimeSeconds)}
-                    strokeColor="#8899aa"
-                    fillColor="rgba(136,153,170,0.12)"
-                  />
+                  <ProfilerSampleStrip values={extractHistorySeries(history, (s) => s.ops?.server?.uptimeSeconds)} accentColor="#8899aa" height={44} marginTop={4} />
                 }
               />
               <OpsCard
@@ -596,8 +639,8 @@ function OverviewPane({ onError }) {
                 ]}
                 below={
                   <>
-                    <SparklineSvg values={sRss} strokeColor={t.good} fillColor="rgba(123,224,160,0.12)" />
-                    <SparklineSvg values={sHeap} strokeColor={t.warn} />
+                    <ProfilerSampleStrip values={sRss} accentColor={t.good} height={42} marginTop={4} />
+                    <ProfilerSampleStrip values={sHeap} accentColor={t.warn} height={42} marginTop={4} />
                   </>
                 }
               />
@@ -612,7 +655,7 @@ function OverviewPane({ onError }) {
                 ]}
                 below={
                   <>
-                    <SparklineSvg values={extractHistorySeries(history, (s) => s.ops?.storage?.relationStorageBytes)} strokeColor="#6ec8ff" />
+                    <ProfilerSampleStrip values={extractHistorySeries(history, (s) => s.ops?.storage?.relationStorageBytes)} accentColor="#6ec8ff" height={42} marginTop={4} />
                     <div style={{ fontSize: 10, color: t.muted }} title={OPS_HELP.relations}>{OPS_HELP.relations}</div>
                   </>
                 }
@@ -630,7 +673,7 @@ function OverviewPane({ onError }) {
                 below={
                   <>
                     <HorizontalBarPairs
-                      captionTip='Relative scales of current snapshot only (normalized to the largest bar). Use line charts above for continuity over polls.'
+                      captionTip="Relative scales of this snapshot only (normalized to the largest bar). Columns in the strips above stay aligned poll-to-poll."
                       pairs={[
                         { key: "sess", label: "Active sessions", value: ops.database.activeSessions, barColor: `linear-gradient(90deg, ${t.accent}, #ff9070)`, fmt: String },
                         {
@@ -644,7 +687,7 @@ function OverviewPane({ onError }) {
                         { key: "audit", label: "Audit rows", value: ops.database.auditLogRows, barColor: "#c4b088", fmt: String },
                       ]}
                     />
-                    <SparklineSvg values={sSessActive} strokeColor="#ffa6c9" height={42} />
+                    <ProfilerSampleStrip values={sSessActive} accentColor="#ffa6c9" height={40} marginTop={6} />
                   </>
                 }
               />
@@ -1506,6 +1549,99 @@ const PROFILE_OPTION_FIELDS = Object.freeze([
   ["orgs", "Organizations"],
 ]);
 
+function newBadgeRegistryRowId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return `br_${crypto.randomUUID()}`;
+  return `br_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function BadgeRegistryEditor({ registry, disabled, onSave }) {
+  const incoming = Array.isArray(registry) ? registry : [];
+  const [draft, setDraft] = useState(() => incoming.map((r) => ({ id: r.id, label: r.label ?? "", color: r.color ?? "#FF6080" })));
+
+  function commit(rows) {
+    if (disabled) return;
+    const payload = rows
+      .map((r) => ({
+        id: String(r?.id || "").trim() || newBadgeRegistryRowId(),
+        label: String(r?.label ?? "").trim(),
+        color: String(r?.color ?? "").trim(),
+      }))
+      .filter((r) => r.label.length > 0);
+    void onSave(payload);
+  }
+
+  return (
+    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10, maxWidth: 720 }}>
+      {draft.map((row, idx) => (
+        <div
+          key={row.id || `idx_${idx}`}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto auto",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <input
+            disabled={disabled}
+            value={row.label}
+            placeholder="Badge label shown on profiles"
+            onChange={(e) => {
+              const v = e.target.value;
+              setDraft((d) => d.map((r, i) => (i === idx ? { ...r, label: v } : r)));
+            }}
+            onBlur={() => commit(draft)}
+            style={{ ...inp(undefined), boxSizing: "border-box", width: "100%", minWidth: 0 }}
+          />
+          <label style={{ display: "flex", alignItems: "center", gap: 8, opacity: disabled ? 0.55 : 1 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: t.muted, whiteSpace: "nowrap" }}>Colour</span>
+            <input
+              disabled={disabled}
+              type="color"
+              aria-label={`Colour for ${row.label || "badge"}`}
+              value={normalizeHexColor(row.color) || "#FF6080"}
+              onChange={(e) => {
+                const hex = normalizeHexColor(e.target.value);
+                const nextDraft = draft.map((r, i) => (i === idx ? { ...r, color: hex || r.color } : r));
+                setDraft(nextDraft);
+                commit(nextDraft);
+              }}
+              style={{ width: 42, height: 32, padding: 2, border: `1px solid ${t.border}`, borderRadius: 8, background: "rgba(0,0,0,0.35)", cursor: disabled ? "not-allowed" : "pointer" }}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => {
+              const next = draft.filter((_, i) => i !== idx);
+              setDraft(next);
+              commit(next);
+            }}
+            style={btn("danger")}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+        <button
+          type="button"
+          disabled={disabled || draft.length >= BADGE_REGISTRY_MAX}
+          onClick={() => {
+            const next = [...draft, { id: newBadgeRegistryRowId(), label: "", color: "#FF6080" }];
+            setDraft(next);
+          }}
+          style={btn("ghost")}
+        >
+          + Register badge
+        </button>
+        <span style={{ fontSize: 11, color: t.muted }}>Up to {BADGE_REGISTRY_MAX} entries. Matches profile badge text (case-insensitive).</span>
+      </div>
+    </div>
+  );
+}
+
 /** ---------- site settings ---------- */
 function SitePane({ viewer, onError }) {
   const [settings, setSettings] = useState(null);
@@ -1588,54 +1724,55 @@ function SitePane({ viewer, onError }) {
           />
         </div>
 
-        <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${t.border}` }}>
-          <div style={{ ...row, marginTop: 4, alignItems: "start", flexWrap: "wrap", gap: 12 }}>
-            <div style={{ flex: "1 1 240px", minWidth: 0 }}>
-              <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>Badge colours</div>
-              <div style={{ color: t.muted, fontSize: 12, marginTop: 4 }}>
-                One line per badge label: <code style={code}>Label #RRGGBB</code> (or shorthand <code style={code}>#RGB</code>). Shown on profile and hover cards after the next landing refresh.
-              </div>
-            </div>
-            <textarea
-              key={JSON.stringify(settings.badgeColors || {})}
-              disabled={!isAdmin}
-              defaultValue={serializeBadgeColorsText(settings.badgeColors)}
-              onBlur={(e) => {
-                save({ badgeColors: parseBadgeColorsText(e.target.value) });
-              }}
-              placeholder={`Dean's Lister #FF6080`}
-              spellCheck={false}
-              style={{ ...inp(360), height: 120, resize: "vertical", fontFamily: "var(--font-geist-mono, monospace)", fontSize: 12 }}
-            />
+        <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${t.border}`, paddingBottom: 4 }}>
+          <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>Badge registry</div>
+          <div style={{ color: t.muted, fontSize: 12, marginTop: 4, maxWidth: 760, lineHeight: 1.5 }}>
+            Each row is one forum badge label and its accent colour. Matching profile badge text uses the same logic as before (exact, then case-insensitive). Visible on profiles and hover cards after landing data refreshes.
           </div>
+          <BadgeRegistryEditor
+            key={JSON.stringify(settings.badgeRegistry || [])}
+            registry={settings.badgeRegistry || []}
+            disabled={!isAdmin}
+            onSave={(reg) => save({ badgeRegistry: reg })}
+          />
         </div>
 
         <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${t.border}` }}>
           <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>Profile field dropdowns</div>
-          <div style={{ color: t.muted, fontSize: 12, marginTop: 4 }}>
-            One value per line — used in the forum profile editor. Stored in <code style={code}>profileFieldOptions</code>.
+          <div style={{ color: t.muted, fontSize: 12, marginTop: 4, marginBottom: 12, maxWidth: 760 }}>
+            One value per line — used in the forum profile editor (each field stays left-aligned inside this column). Stored in <code style={code}>profileFieldOptions</code>.
           </div>
-          {PROFILE_OPTION_FIELDS.map(([fieldKey, title]) => (
-            <div key={fieldKey} style={{ ...row, marginTop: 12, alignItems: "start" }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "12px 0 16px", maxWidth: 720 }}>
+            {PROFILE_OPTION_FIELDS.map(([fieldKey, title]) => (
+              <div key={fieldKey} style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", minWidth: 0 }}>
                 <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>{title}</div>
+                <textarea
+                  key={(settings.profileFieldOptions?.[fieldKey] || []).join("\n")}
+                  disabled={!isAdmin}
+                  defaultValue={(settings.profileFieldOptions?.[fieldKey] || []).join("\n")}
+                  onBlur={(e) => {
+                    const list = e.target.value
+                      .split(/[\n]+/)
+                      .map((s) => s.trim())
+                      .filter(Boolean)
+                      .slice(0, 96);
+                    save({ profileFieldOptions: { [fieldKey]: list } });
+                  }}
+                  spellCheck={false}
+                  placeholder={"BS Computer Science\nBS Information Technology"}
+                  style={{
+                    ...inp(undefined),
+                    width: "100%",
+                    maxWidth: "100%",
+                    boxSizing: "border-box",
+                    height: 96,
+                    resize: "vertical",
+                    fontFamily: "var(--font-geist-mono, monospace)",
+                  }}
+                />
               </div>
-              <textarea
-                key={(settings.profileFieldOptions?.[fieldKey] || []).join("\n")}
-                disabled={!isAdmin}
-                defaultValue={(settings.profileFieldOptions?.[fieldKey] || []).join("\n")}
-                onBlur={(e) => {
-                  const list = e.target.value
-                    .split(/[\n]+/)
-                    .map((s) => s.trim())
-                    .filter(Boolean)
-                    .slice(0, 96);
-                  save({ profileFieldOptions: { [fieldKey]: list } });
-                }}
-                style={{ ...inp(320), height: 96, resize: "vertical", fontFamily: "var(--font-geist-mono, monospace)" }}
-              />
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
 
         {saving && <div style={{ padding: "8px 16px", fontSize: 12, color: t.muted }}>Saving…</div>}

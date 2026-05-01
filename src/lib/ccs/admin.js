@@ -10,7 +10,7 @@ import { newPasswordRecord, sanitizeEmail } from "./auth";
 import { getDb } from "./drizzle-client";
 import { toPublicProfile } from "./publicUser";
 import { formatStatNumber, mergeLandingCms } from "./landingDefaults";
-import { sanitizeBadgeColorsInput } from "./badgeColors";
+import { badgeColorsMapFromRegistry, ensureBadgeRegistryAndColors, sanitizeBadgeRegistryInput } from "./badgeColors";
 import { publicAppBaseUrl } from "./mailer";
 import {
   clampMediaField,
@@ -45,7 +45,8 @@ export const DEFAULT_SITE_SETTINGS = {
   autoModLinkPosts: false,
   bannedWords: [],
   profileFieldOptions: DEFAULT_PROFILE_FIELD_OPTIONS,
-  /** Map of badge label → accent hex (#RRGGBB) for pills in the forum UI. */
+  /** Registered badges (label + colour); `badgeColors` is derived when persisting / returning settings. */
+  badgeRegistry: [],
   badgeColors: {},
 };
 
@@ -218,14 +219,14 @@ export async function getSiteSettings() {
   const [row] = await db.select().from(schema.ccsSiteSettings).where(eq(schema.ccsSiteSettings.key, "site")).limit(1);
   if (!row) {
     const merged = { ...DEFAULT_SITE_SETTINGS, profileFieldOptions: mergeProfileFieldOptions(null) };
-    merged.badgeColors = sanitizeBadgeColorsInput(merged.badgeColors || {});
-    return merged;
+    const badge = ensureBadgeRegistryAndColors(merged);
+    return { ...merged, ...badge };
   }
   const v = row.value && typeof row.value === "object" ? row.value : {};
   const merged = { ...DEFAULT_SITE_SETTINGS, ...v };
   merged.profileFieldOptions = mergeProfileFieldOptions(merged.profileFieldOptions);
-  merged.badgeColors = sanitizeBadgeColorsInput(merged.badgeColors || {});
-  return merged;
+  const badge = ensureBadgeRegistryAndColors(merged);
+  return { ...merged, ...badge };
 }
 
 export async function getMergedProfileFieldOptions() {
@@ -254,13 +255,13 @@ export async function setSiteSettings(actorId, patch) {
     next.profileFieldOptions = mergeProfileFieldOptions(next.profileFieldOptions || null);
   }
 
-  if (patch && typeof patch === "object" && patch.badgeColors && typeof patch.badgeColors === "object") {
-    next.badgeColors = sanitizeBadgeColorsInput({
-      ...sanitizeBadgeColorsInput(current.badgeColors || {}),
-      ...patch.badgeColors,
-    });
+  if (patch && typeof patch === "object" && Array.isArray(patch.badgeRegistry)) {
+    next.badgeRegistry = sanitizeBadgeRegistryInput(patch.badgeRegistry);
+    next.badgeColors = badgeColorsMapFromRegistry(next.badgeRegistry);
   } else {
-    next.badgeColors = sanitizeBadgeColorsInput(next.badgeColors || {});
+    const badge = ensureBadgeRegistryAndColors(next);
+    next.badgeRegistry = badge.badgeRegistry;
+    next.badgeColors = badge.badgeColors;
   }
 
   const now = Date.now();

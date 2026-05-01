@@ -1,21 +1,24 @@
 "use client";
 
 import { defaultLandingCms } from "@/lib/ccs/landingDefaults";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/ccsApi";
 import { GSAP_CDN } from "../cdn";
-import { APP_CONFIG } from "../config/appConfig";
 import { useScript } from "../useScript";
 import { PostCard } from "../components/PostCard";
 import { MiniProfilePreview } from "../ui/MiniProfilePreview";
 import { useAppState } from "../state/AppState";
 import { PostDetailModal } from "../ui/PostDetailModal";
+import { FeedComposer } from "../ui/FeedComposer";
 
 export function ForumScreen({ readOnly = false, onSignInPrompt }) {
   const { users, posts, likePost, toggleBookmark, sharePost, reportPost, tokens, prefs, setPage, publishPost } = useAppState();
   const isLight = prefs.mode === "light";
   const [forumRail, setForumRail] = useState(() => defaultLandingCms().forumRail);
+  const [postTagOptions, setPostTagOptions] = useState(() => defaultLandingCms().postTagOptions);
   const [draft, setDraft] = useState("");
+  const [composeTag, setComposeTag] = useState(() => prefs.defaultPostTag || "General");
+  const [composeImage, setComposeImage] = useState("");
   const composeRef = useRef(null);
   const feedScrollRef = useRef(null);
   const gsapLoaded = useScript(GSAP_CDN);
@@ -38,6 +41,9 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
           interests: Array.isArray(d.cms.forumRail.interests) ? d.cms.forumRail.interests : prev.interests,
           trending: Array.isArray(d.cms.forumRail.trending) ? d.cms.forumRail.trending : prev.trending,
         }));
+        if (Array.isArray(d.cms.postTagOptions) && d.cms.postTagOptions.length) {
+          setPostTagOptions(d.cms.postTagOptions.map(String));
+        }
       } catch {
         /* keep last good rail */
       }
@@ -70,12 +76,15 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
     }
     if (!draft.trim()) return;
     try {
-      await publishPost(draft.trim(), prefs.defaultPostTag || "General");
+      await publishPost(draft.trim(), composeTag || prefs.defaultPostTag || "General", composeImage);
       setDraft("");
+      setComposeImage("");
     } catch {
       // Network / validation — keep draft so the user doesn’t lose it.
     }
   };
+
+  const filterTags = useMemo(() => ["All", ...postTagOptions], [postTagOptions]);
 
   const handleAuthorEnter = (userId, rect) => {
     if (closeTimerRef.current) {
@@ -189,7 +198,7 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
           )}
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-            {["All", "General", "Academics", "Tech", "Events"].map((t) => (
+            {filterTags.map((t) => (
               <button
                 key={t}
                 onClick={() => setActiveTag(t)}
@@ -209,60 +218,23 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
             ))}
           </div>
 
-          <div
-            ref={composeRef}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              background: tokens.cardBg,
-              border: `1px solid ${tokens.cardBorder}`,
-              borderRadius: 18,
-              padding: "12px 14px",
-              marginBottom: "1.2rem",
-              backdropFilter: "blur(12px)",
-              opacity: 0,
-              boxShadow: isLight ? "0 12px 24px rgba(60,0,20,0.08)" : "0 18px 60px rgba(0,0,0,0.30)",
-            }}
-          >
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder={readOnly ? "Sign in to start posting…" : APP_CONFIG.placeholders.composer}
+          <div ref={composeRef} style={{ marginBottom: "1.2rem", opacity: 0 }}>
+            <FeedComposer
+              text={draft}
+              setText={setDraft}
+              selectedTag={composeTag}
+              setSelectedTag={setComposeTag}
+              postTagOptions={postTagOptions}
+              imageUrl={composeImage}
+              setImageUrl={setComposeImage}
+              users={users}
               disabled={readOnly}
-              style={{
-                flex: 1,
-                background: "none",
-                border: "none",
-                outline: "none",
-                color: tokens.text,
-                fontSize: 14,
-                opacity: readOnly ? 0.6 : 1,
-              }}
-              onKeyDown={(e) => e.key === "Enter" && handlePublish()}
+              onSubmit={handlePublish}
+              publishLabel={readOnly ? "Sign in" : "Publish"}
+              tokens={tokens}
+              isLight={isLight}
+              minRows={2}
             />
-            <button
-              onClick={handlePublish}
-              style={{
-                background: "linear-gradient(135deg, #c0002a, #8b0020)",
-                border: "none",
-                color: "#fff",
-                padding: "9px 18px",
-                borderRadius: 12,
-                cursor: "pointer",
-                fontWeight: 800,
-                fontSize: 13,
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
-              </svg>
-              {readOnly ? "Sign in" : "Publish"}
-            </button>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>

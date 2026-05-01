@@ -22,7 +22,9 @@ export function ProfileEditModal({ open, profile, onCancel, onSave }) {
       ["focus", "Focus"],
       ["org", "Org"],
       ["bio", "Bio"],
-      ["badges", "Badges (comma separated)"],
+      ["signature", "Forum signature (text)"],
+      ["signatureImage", "Signature banner image (https URL or data URL)"],
+      ["signatureLink", "Signature link (https only)"],
     ],
     []
   );
@@ -89,18 +91,24 @@ export function ProfileEditModal({ open, profile, onCancel, onSave }) {
 
         <div className="ccs-stack-mobile" style={{ padding: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           {fields.map(([k, label]) => (
-            <div key={k} style={{ gridColumn: k === "bio" ? "1 / -1" : "auto" }}>
+            <div
+              key={k}
+              style={{
+                gridColumn: k === "bio" || k === "signature" || k === "signatureImage" ? "1 / -1" : "auto",
+              }}
+            >
               <div style={{ fontSize: 12, color: "rgba(240,220,220,0.70)", marginBottom: 6 }}>{label}</div>
-              {k === "bio" ? (
+              {k === "bio" || k === "signature" ? (
                 <textarea
-                  value={draft?.bio ?? ""}
-                  onChange={(e) => onChange("bio", e.target.value)}
-                  rows={4}
+                  value={draft?.[k] ?? ""}
+                  onChange={(e) => onChange(k, e.target.value)}
+                  rows={k === "signature" ? 3 : 4}
+                  maxLength={k === "signature" ? 280 : undefined}
                   style={inputStyle(true)}
                 />
               ) : (
                 <input
-                  value={k === "badges" ? (draft?.badges || []).join(", ") : draft?.[k] ?? ""}
+                  value={draft?.[k] ?? ""}
                   onChange={(e) => onChange(k, e.target.value)}
                   style={inputStyle(false)}
                 />

@@ -301,6 +301,23 @@ export async function setUserRole(actor, targetUserId, nextRole) {
   return { user: await getUserDetailById(targetUserId) };
 }
 
+export async function setUserBadges(actor, targetUserId, badges) {
+  const db = await getDb();
+  const [target] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, targetUserId)).limit(1);
+  if (!target) return { error: "not_found", status: 404 };
+
+  const arr = Array.isArray(badges) ? badges.map((x) => String(x || "").trim().slice(0, 40)).filter(Boolean) : [];
+  const nextBadges = arr.slice(0, 8);
+
+  const prevProfile = typeof target.profile === "object" && target.profile ? target.profile : {};
+  const merged = { ...DEFAULT_PROFILE, ...prevProfile, id: target.id, badges: nextBadges };
+
+  await db.update(schema.ccsUsers).set({ profile: merged }).where(eq(schema.ccsUsers.id, targetUserId));
+  await appendAudit(actor.id, "user_badges_update", targetUserId, { count: nextBadges.length });
+
+  return { user: await getUserDetailById(targetUserId) };
+}
+
 export async function setUserBanned(actor, targetUserId, banned, reason = "") {
   const db = await getDb();
   const [target] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, targetUserId)).limit(1);
@@ -366,6 +383,7 @@ export async function listAllPosts({ q = "" } = {}) {
     userId: r.userId,
     content: r.content,
     tag: r.tag,
+    imageUrl: r.imageUrl || "",
     createdAt: Number(r.createdAt) || 0,
     pinned: !!r.pinned,
     likedBy: Array.isArray(r.likedBy) ? r.likedBy : [],

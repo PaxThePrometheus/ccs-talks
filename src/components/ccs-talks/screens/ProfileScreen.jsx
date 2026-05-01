@@ -1,5 +1,6 @@
 "use client";
 
+import { defaultLandingCms } from "@/lib/ccs/landingDefaults";
 import { useMemo, useState } from "react";
 import { useAppState } from "../state/AppState";
 import { ProfileEditModal } from "../ui/ProfileEditModal";
@@ -7,6 +8,7 @@ import { AvatarBannerModal } from "../ui/AvatarBannerModal";
 import { AccountCenterModal } from "../ui/AccountCenterModal";
 import { PostCard } from "../components/PostCard";
 import { PostDetailModal } from "../ui/PostDetailModal";
+import { FeedComposer } from "../ui/FeedComposer";
 
 function withAlpha(hex, a) {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || "");
@@ -16,7 +18,22 @@ function withAlpha(hex, a) {
 }
 
 export function ProfileScreen() {
-  const { profile, posts, users, likePost, toggleBookmark, sharePost, reportPost, friends, tokens, prefs, publishPost, persistFullProfile } = useAppState();
+  const {
+    profile,
+    profileVisitUserId,
+    resetProfileVisit,
+    posts,
+    users,
+    likePost,
+    toggleBookmark,
+    sharePost,
+    reportPost,
+    friends,
+    tokens,
+    prefs,
+    publishPost,
+    persistFullProfile,
+  } = useAppState();
   const isLight = prefs.mode === "light";
   const [isEditing, setIsEditing] = useState(false);
   const [editingAvatar, setEditingAvatar] = useState(false);
@@ -24,24 +41,34 @@ export function ProfileScreen() {
   const [tab, setTab] = useState("posts"); // posts | about | friends | photos
   const [activePostId, setActivePostId] = useState(null);
   const [draft, setDraft] = useState("");
-  const user = profile;
+  const [composeTag, setComposeTag] = useState(() => prefs.defaultPostTag || "General");
+  const [composeImage, setComposeImage] = useState("");
+  const [postTagOptions] = useState(() => defaultLandingCms().postTagOptions);
 
-  const avatarColor = profile.avatarColor || "#9b0028";
-  const avatarAccent = profile.avatarAccent || "#ff6080";
-  const bannerColor = profile.bannerColor || "#3a0014";
-  const bannerAccent = profile.bannerAccent || "#ff3a6e";
+  const displayUser = useMemo(() => {
+    if (profileVisitUserId && users[profileVisitUserId]) return users[profileVisitUserId];
+    return profile;
+  }, [profileVisitUserId, users, profile]);
+
+  const isSelf = !profileVisitUserId || profileVisitUserId === profile.id;
+  const user = displayUser;
+
+  const avatarColor = displayUser.avatarColor || "#9b0028";
+  const avatarAccent = displayUser.avatarAccent || "#ff6080";
+  const bannerColor = displayUser.bannerColor || "#3a0014";
+  const bannerAccent = displayUser.bannerAccent || "#ff3a6e";
 
   const myPosts = useMemo(
     () =>
       posts
-        .filter((p) => p.userId === profile.id)
+        .filter((p) => p.userId === displayUser.id)
         .slice()
         .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)),
-    [posts, profile.id]
+    [posts, displayUser.id]
   );
 
-  const bannerStyle = profile.bannerImage
-    ? { backgroundImage: `url(${profile.bannerImage})`, backgroundSize: "cover", backgroundPosition: "center" }
+  const bannerStyle = displayUser.bannerImage
+    ? { backgroundImage: `url(${displayUser.bannerImage})`, backgroundSize: "cover", backgroundPosition: "center" }
     : {
         background: `
           radial-gradient(900px 420px at 70% 20%, ${withAlpha(bannerAccent, 0.30)}, transparent 62%),
@@ -50,8 +77,8 @@ export function ProfileScreen() {
           ${bannerColor}
         `,
       };
-  const avatarStyle = profile.avatarImage
-    ? { backgroundImage: `url(${profile.avatarImage})`, backgroundSize: "cover", backgroundPosition: "center" }
+  const avatarStyle = displayUser.avatarImage
+    ? { backgroundImage: `url(${displayUser.avatarImage})`, backgroundSize: "cover", backgroundPosition: "center" }
     : { background: `linear-gradient(135deg, ${avatarAccent}, ${avatarColor})` };
 
   return (
@@ -71,6 +98,42 @@ export function ProfileScreen() {
       }}
     >
       <div style={{ maxWidth: 1080, margin: "0 auto" }}>
+        {!isSelf ? (
+          <div
+            style={{
+              marginBottom: 12,
+              padding: "10px 14px",
+              borderRadius: 14,
+              border: `1px solid ${tokens.cardBorder}`,
+              background: tokens.surfaceAlt,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ fontSize: 13, color: tokens.textMuted }}>
+              Viewing <b style={{ color: tokens.textStrong }}>@{displayUser.handle}</b>
+            </div>
+            <button
+              type="button"
+              onClick={() => resetProfileVisit()}
+              style={{
+                border: `1px solid ${tokens.border}`,
+                background: tokens.cardBg,
+                color: tokens.text,
+                padding: "8px 12px",
+                borderRadius: 12,
+                cursor: "pointer",
+                fontWeight: 800,
+                fontSize: 12,
+              }}
+            >
+              Back to my profile
+            </button>
+          </div>
+        ) : null}
         {/* Banner: taller, no overlay text. Avatar floats and overlaps the
             info plate below — so name/badges no longer cover the banner. */}
         <div className="ccs-profile-banner" style={{ position: "relative", borderRadius: 22, overflow: "hidden", border: `1px solid ${tokens.cardBorder}`, boxShadow: isLight ? "0 14px 32px rgba(60,0,20,0.14)" : "0 22px 70px rgba(0,0,0,0.35)" }}>
@@ -87,7 +150,7 @@ export function ProfileScreen() {
                 : "linear-gradient(to bottom, rgba(26,0,8,0) 0%, rgba(26,0,8,0.55) 70%, rgba(26,0,8,0.95) 100%)",
             }}
           />
-          {!profile.bannerImage && (
+          {!displayUser.bannerImage && (
             <div aria-hidden="true" style={{ position: "absolute", inset: 0, backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px)`, backgroundSize: "180px 180px", opacity: 0.30, maskImage: "linear-gradient(to bottom, rgba(0,0,0,1) 10%, rgba(0,0,0,0.25) 60%, rgba(0,0,0,0) 100%)" }} />
           )}
         </div>
@@ -115,8 +178,9 @@ export function ProfileScreen() {
         >
           {/* Avatar (overlapping upward) */}
           <button
-            onClick={() => setEditingAvatar(true)}
-            title="Edit avatar"
+            onClick={() => isSelf && setEditingAvatar(true)}
+            title={isSelf ? "Edit avatar" : ""}
+            disabled={!isSelf}
             className="ccs-profile-avatar"
             style={{
               position: "absolute",
@@ -127,7 +191,8 @@ export function ProfileScreen() {
               border: "none",
               padding: 0,
               background: "transparent",
-              cursor: "pointer",
+              cursor: isSelf ? "pointer" : "default",
+              opacity: isSelf ? 1 : 1,
             }}
           >
             <div
@@ -140,25 +205,27 @@ export function ProfileScreen() {
                 ...avatarStyle,
               }}
             />
-            <div
-              style={{
-                position: "absolute",
-                right: -6,
-                bottom: -6,
-                width: 32,
-                height: 32,
-                borderRadius: 999,
-                background: isLight ? "rgba(255,255,255,0.95)" : "rgba(20,0,8,0.95)",
-                border: `1px solid ${tokens.borderStrong}`,
-                color: tokens.text,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 14,
-              }}
-            >
-              🖌
-            </div>
+            {isSelf ? (
+              <div
+                style={{
+                  position: "absolute",
+                  right: -6,
+                  bottom: -6,
+                  width: 32,
+                  height: 32,
+                  borderRadius: 999,
+                  background: isLight ? "rgba(255,255,255,0.95)" : "rgba(20,0,8,0.95)",
+                  border: `1px solid ${tokens.borderStrong}`,
+                  color: tokens.text,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 14,
+                }}
+              >
+                🖌
+              </div>
+            ) : null}
           </button>
 
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -176,13 +243,20 @@ export function ProfileScreen() {
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <button onClick={() => setIsEditing(true)} style={headerBtn("ghost", tokens)}>Edit profile</button>
-            <button onClick={() => setEditingAvatar(true)} style={headerBtn("solid", tokens)}>🖌 Cover</button>
-          </div>
+          {isSelf ? (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button onClick={() => setIsEditing(true)} style={headerBtn("ghost", tokens)}>
+                Edit profile
+              </button>
+              <button onClick={() => setEditingAvatar(true)} style={headerBtn("solid", tokens)}>
+                🖌 Cover
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {/* Account Center plate (entry into the paginated modal) */}
+        {isSelf ? (
         <button
           onClick={() => setAccountOpen(true)}
           style={{
@@ -211,11 +285,25 @@ export function ProfileScreen() {
           </div>
           <div style={{ color: tokens.textMuted, fontWeight: 800 }}>Open →</div>
         </button>
+        ) : null}
 
         {/* Tabs */}
         <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {[ ["posts", "Posts"], ["about", "About"], ["friends", "Friends"], ["photos", "Photos"] ].map(([k, label]) => (
-            <button key={k} onClick={() => setTab(k)} style={tabPill(tab === k, tokens, isLight)}>{label}</button>
+          {(isSelf
+            ? [
+                ["posts", "Posts"],
+                ["about", "About"],
+                ["friends", "Friends"],
+                ["photos", "Photos"],
+              ]
+            : [
+                ["posts", "Posts"],
+                ["about", "About"],
+              ]
+          ).map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)} style={tabPill(tab === k, tokens, isLight)}>
+              {label}
+            </button>
           ))}
         </div>
 
@@ -232,7 +320,7 @@ export function ProfileScreen() {
               <div style={{ marginTop: 12, height: 1, background: tokens.divider }} />
               <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <Stat k="Posts" v={String(myPosts.length)} tokens={tokens} />
-                <Stat k="Bookmarks" v={String(posts.filter((p) => p.bookmarked).length)} tokens={tokens} />
+                {isSelf ? <Stat k="Bookmarks" v={String(posts.filter((p) => p.bookmarked).length)} tokens={tokens} /> : null}
                 <Stat k="Likes" v={String(myPosts.reduce((s, p) => s + (p.likes || 0), 0))} tokens={tokens} />
                 <Stat k="Badges" v={String((user.badges || []).length)} tokens={tokens} />
               </div>
@@ -249,49 +337,42 @@ export function ProfileScreen() {
           <div>
             {tab === "posts" && (
               <>
-                <div style={panelStyle(tokens, isLight)}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.2px" }}>Create post</div>
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", color: tokens.textSubtle }}>TIMELINE</div>
-                  </div>
-                  <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
-                    <input
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      placeholder="Share an update…"
-                      style={{ flex: 1, borderRadius: 14, border: `1px solid ${tokens.inputBorder}`, background: tokens.inputBg, color: tokens.text, padding: "10px 12px", outline: "none", fontSize: 13 }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
+                {isSelf ? (
+                  <div style={panelStyle(tokens, isLight)}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.2px" }}>Create post</div>
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", color: tokens.textSubtle }}>TIMELINE</div>
+                    </div>
+                    <div style={{ marginTop: 10 }}>
+                      <FeedComposer
+                        text={draft}
+                        setText={setDraft}
+                        selectedTag={composeTag}
+                        setSelectedTag={setComposeTag}
+                        postTagOptions={postTagOptions}
+                        imageUrl={composeImage}
+                        setImageUrl={setComposeImage}
+                        users={users}
+                        disabled={false}
+                        onSubmit={async () => {
                           const v = draft.trim();
                           if (!v) return;
-                          void (async () => {
-                            try {
-                              await publishPost(v, prefs.defaultPostTag || "General");
-                              setDraft("");
-                            } catch {
-                              /* keep draft */
-                            }
-                          })();
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => {
-                        const v = draft.trim();
-                        if (!v) return;
-                        void (async () => {
                           try {
-                            await publishPost(v, prefs.defaultPostTag || "General");
+                            await publishPost(v, composeTag || prefs.defaultPostTag || "General", composeImage);
                             setDraft("");
+                            setComposeImage("");
                           } catch {
                             /* keep draft */
                           }
-                        })();
-                      }}
-                      style={{ border: `1px solid ${tokens.borderStrong}`, background: "linear-gradient(135deg, rgba(255,96,128,0.30), rgba(155,0,40,0.60))", color: "#fff", padding: "10px 12px", borderRadius: 14, cursor: "pointer", fontWeight: 900, fontSize: 13 }}
-                    >Post</button>
+                        }}
+                        publishLabel="Post"
+                        tokens={tokens}
+                        isLight={isLight}
+                        minRows={2}
+                      />
+                    </div>
                   </div>
-                </div>
+                ) : null}
 
                 <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
                   {myPosts.map((p) => (

@@ -39,11 +39,18 @@ export async function POST(request) {
     return NextResponse.json({ error: "New account registration is currently closed by an administrator." }, { status: 403 });
   }
 
+  const requestedHandle = typeof body.handle === "string" ? body.handle : "";
+
   try {
-    const payload = await registerAccountRow(email, password, name, handleFromEmail(email));
+    const payload = await registerAccountRow(email, password, name, handleFromEmail(email), {
+      requestedHandle,
+    });
 
     if (payload?.conflict) {
       return NextResponse.json({ error: "An account with this email already exists." }, { status: 409 });
+    }
+    if (payload?.handleTaken) {
+      return NextResponse.json({ error: "That username handle is already taken. Pick another." }, { status: 409 });
     }
 
     const res = NextResponse.json({ profile: toPublicProfile(payload.profile) }, { status: 201 });

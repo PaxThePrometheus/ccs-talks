@@ -33,13 +33,17 @@ export async function POST(request) {
 
   const content = String(payload.content || "").trim();
   const tag = String(payload.tag || "General").trim() || "General";
+  const imageUrl = typeof payload.imageUrl === "string" ? payload.imageUrl : "";
   if (!content) return NextResponse.json({ error: "Post content is empty." }, { status: 400 });
 
   try {
     const viewer = await resolveViewerFromSession(token);
     if (!viewer) return NextResponse.json({ error: "Sign in to post." }, { status: 401 });
 
-    const created = await createUserPost(viewer.id, content, tag);
+    const created = await createUserPost(viewer.id, content, tag, imageUrl);
+    if (created?.imageTooLarge) {
+      return NextResponse.json({ error: "Attached image is too large or invalid." }, { status: 413 });
+    }
     return NextResponse.json({ post: created }, { status: 201 });
   } catch {
     return NextResponse.json({ error: "Could not publish post." }, { status: 503 });

@@ -38,6 +38,7 @@ export function buildFeed(db, viewerUserId = null, { tagFilter = null } = {}) {
     avatar: initialsFromName(authors[p.userId]?.name ?? "Student"),
     time: relativeTime(p.createdAt),
     content: p.content,
+    imageUrl: typeof p.imageUrl === "string" ? p.imageUrl : "",
     likes: Array.isArray(p.likedBy) ? p.likedBy.length : 0,
     comments: typeof p.commentCount === "number" ? p.commentCount : 0,
     bookmarked: viewer ? viewer.bookmarkedPostIds.includes(p.id) : false,

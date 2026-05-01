@@ -5,6 +5,7 @@ import {
   deleteUserCascade,
   getUserDetailById,
   requireStaff,
+  setUserBadges,
   setUserBanned,
   setUserRole,
 } from "@/lib/ccs/admin";
@@ -46,6 +47,12 @@ export async function PATCH(request, { params }) {
 
   if (typeof body.banned === "boolean") {
     const out = await setUserBanned(gate.row, userId, body.banned, body.bannedReason || "");
+    if (out?.error) return NextResponse.json({ error: out.message || out.error }, { status: out.status || 400 });
+    return NextResponse.json(out);
+  }
+
+  if (Array.isArray(body.badges)) {
+    const out = await setUserBadges(gate.row, userId, body.badges);
     if (out?.error) return NextResponse.json({ error: out.message || out.error }, { status: out.status || 400 });
     return NextResponse.json(out);
   }

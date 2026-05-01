@@ -30,6 +30,7 @@ async function seedDemoPostsIfEmpty(ddb) {
       userId: p.userId,
       content: p.content,
       tag: p.tag ?? "General",
+      imageUrl: "",
       createdAt: now - (5 - Math.min(i, 4)) * 3600_000 - i * 120_000,
       likedBy: [],
       commentCount: typeof p.comments === "number" ? p.comments : 0,

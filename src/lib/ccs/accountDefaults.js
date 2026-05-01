@@ -18,7 +18,11 @@ export const CCS_DEFAULT_PREFS = {
   showOnlineStatus: true,
   reduceMotion: false,
   largerText: false,
+  onboardingCompleted: false,
 };
+
+/** Whitelisted preference keys — anything else from the client is dropped. */
+const PREFS_KEYS = new Set(Object.keys(CCS_DEFAULT_PREFS));
 
 export const CCS_DEFAULT_FRIENDS = {
   friends: ["u_renz", "u_maica", "u_tricia"],
@@ -36,7 +40,24 @@ export const CCS_DEFAULT_SUBS = {
 };
 
 export function normalizePrefs(partial) {
-  return { ...CCS_DEFAULT_PREFS, ...(partial && typeof partial === "object" ? partial : {}) };
+  const out = { ...CCS_DEFAULT_PREFS };
+  if (!partial || typeof partial !== "object") return out;
+
+  for (const [k, v] of Object.entries(partial)) {
+    if (!PREFS_KEYS.has(k)) continue;
+    const def = CCS_DEFAULT_PREFS[k];
+    if (typeof def === "boolean") {
+      out[k] = !!v;
+    } else if (typeof def === "number") {
+      const n = Number(v);
+      out[k] = Number.isFinite(n) ? n : def;
+    } else if (typeof def === "string") {
+      out[k] = typeof v === "string" ? v.slice(0, 80) : def;
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
 }
 
 export function normalizeFriends(raw) {

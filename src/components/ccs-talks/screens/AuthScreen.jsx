@@ -15,6 +15,8 @@ export function AuthScreen({ mode, setPage }) {
   const isLogin = mode === "login";
 
   const [email, setEmail] = useState("");
+  const [handle, setHandle] = useState("");
+  const [handleStatus, setHandleStatus] = useState(null);
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -28,6 +30,31 @@ export function AuthScreen({ mode, setPage }) {
     if (prefs.reduceMotion) { cardRef.current.style.opacity = "1"; return; }
     window.gsap.fromTo(cardRef.current, { opacity: 0, y: 28, scale: 0.98 }, { opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.2)" });
   }, [gsapLoaded, mode, prefs.reduceMotion]);
+
+  useEffect(() => {
+    if (isLogin) return;
+    const h = handle.trim().replace(/[^\w.]/g, "_").slice(0, 32);
+    if (!h) {
+      setHandleStatus(null);
+      return;
+    }
+    let alive = true;
+    const t = window.setTimeout(() => {
+      void api
+        .checkHandleAvailable(h)
+        .then((d) => {
+          if (!alive) return;
+          setHandleStatus(d.available ? "ok" : "taken");
+        })
+        .catch(() => {
+          if (alive) setHandleStatus(null);
+        });
+    }, 400);
+    return () => {
+      alive = false;
+      window.clearTimeout(t);
+    };
+  }, [handle, isLogin]);
 
   // password strength scoring (0..4)
   const strength = useMemo(() => {
@@ -53,6 +80,8 @@ export function AuthScreen({ mode, setPage }) {
     if (!password) return "Please enter a password.";
     if (!isLogin) {
       if (!name.trim()) return "Please enter your full name.";
+      const hh = handle.trim().replace(/[^\w.]/g, "_").slice(0, 32);
+      if (hh && handleStatus === "taken") return "That handle is already taken.";
       if (password.length < 8) return "Password should be at least 8 characters.";
       if (password !== confirm) return "Passwords don't match.";
       if (!agree) return "Please agree to the Community Guidelines.";
@@ -70,7 +99,8 @@ export function AuthScreen({ mode, setPage }) {
         const data = await api.loginAccount({ email, password });
         signIn({ profile: data.profile });
       } else {
-        const data = await api.registerAccount({ email, password, name: name.trim() });
+        const hh = handle.trim().replace(/[^\w.]/g, "_").slice(0, 32);
+        const data = await api.registerAccount({ email, password, name: name.trim(), handle: hh || undefined });
         signIn({ profile: data.profile });
       }
       await refreshFeed();
@@ -158,6 +188,27 @@ export function AuthScreen({ mode, setPage }) {
           {!isLogin && (
             <Field label="Full name" tokens={tokens}>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Juan Dela Cruz" style={inp(tokens)} />
+            </Field>
+          )}
+
+          {!isLogin && (
+            <Field label="Username handle" tokens={tokens}>
+              <input
+                value={handle}
+                onChange={(e) => setHandle(e.target.value)}
+                placeholder="letters, numbers, _ and . (optional — we’ll pick one from your email if empty)"
+                style={inp(tokens)}
+                autoComplete="username"
+              />
+              <div style={{ marginTop: 4, fontSize: 11, color: tokens.textSubtle }}>
+                {handle.trim()
+                  ? handleStatus === "ok"
+                    ? "This handle is available."
+                    : handleStatus === "taken"
+                      ? "Already taken — tweak it slightly."
+                      : "Checking…"
+                  : "Leave blank to auto-generate from your email."}
+              </div>
             </Field>
           )}
 

@@ -3,10 +3,29 @@
 import { useEffect, useMemo, useState } from "react";
 import { THEME } from "../theme";
 import { useAppState } from "../state/AppState";
+import { Icon } from "./Icon";
+import { MentionBody, buildHandleDirectory } from "../components/MentionBody";
+import { SignatureFooter } from "../components/SignatureFooter";
+import { FeedComposer } from "./FeedComposer";
 
 export function PostDetailModal({ open, postId, onClose }) {
-  const { posts, users, commentsByPostId, addComment, updatePost, sharePost, reportPost, profile, loadCommentsFromServer } = useAppState();
+  const {
+    posts,
+    users,
+    commentsByPostId,
+    addComment,
+    updatePost,
+    sharePost,
+    reportPost,
+    profile,
+    loadCommentsFromServer,
+    prefs,
+    tokens,
+    visitUserProfile,
+  } = useAppState();
+  const isLight = prefs.mode === "light";
   const [commentText, setCommentText] = useState("");
+  const [commentImage, setCommentImage] = useState("");
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
 
@@ -14,6 +33,7 @@ export function PostDetailModal({ open, postId, onClose }) {
   const user = post ? users[post.userId] : null;
   const comments = (postId != null && commentsByPostId[String(postId)]) || commentsByPostId[postId] || [];
   const canEdit = post && post.userId === profile.id;
+  const handleDir = useMemo(() => buildHandleDirectory(users), [users]);
 
   useEffect(() => {
     if (!open || postId == null) return undefined;
@@ -31,6 +51,14 @@ export function PostDetailModal({ open, postId, onClose }) {
   const handleSaveEdit = () => {
     updatePost(post.id, { content: editText });
     setEditing(false);
+  };
+
+  const submitComment = () => {
+    const v = commentText.trim();
+    if (!v) return;
+    addComment(post.id, { userId: profile.id, text: v, imageUrl: commentImage });
+    setCommentText("");
+    setCommentImage("");
   };
 
   return (
@@ -64,13 +92,16 @@ export function PostDetailModal({ open, postId, onClose }) {
 
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <button onClick={() => sharePost(post.id)} style={actionBtnStyle()}>
+              <Icon name="share" size={14} style={{ marginRight: 6 }} />
               Share
             </button>
             <button onClick={() => reportPost(post.id, "Inappropriate content")} style={actionBtnStyle()}>
+              <Icon name="flag" size={14} style={{ marginRight: 6 }} />
               Report
             </button>
             {canEdit && !editing && (
               <button onClick={handleStartEdit} style={actionBtnStyle()}>
+                <Icon name="pencil" size={14} style={{ marginRight: 6 }} />
                 Edit
               </button>
             )}
@@ -91,14 +122,44 @@ export function PostDetailModal({ open, postId, onClose }) {
               {editing ? (
                 <textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={4} style={inputStyle(true)} />
               ) : (
-                <div style={{ color: "rgba(240,220,220,0.90)", fontSize: 15, lineHeight: 1.65 }}>{post.content}</div>
+                <div style={{ color: "rgba(240,220,220,0.90)", fontSize: 15, lineHeight: 1.65 }}>
+                  <MentionBody
+                    text={post.content}
+                    handleToUserId={handleDir}
+                    color="#ff9ab0"
+                    onVisitUser={visitUserProfile}
+                    style={{ whiteSpace: "pre-wrap" }}
+                  />
+                </div>
               )}
+              {post.imageUrl ? (
+                <div style={{ marginTop: 10 }}>
+                  <img
+                    src={post.imageUrl}
+                    alt=""
+                    style={{ maxHeight: 360, maxWidth: "100%", borderRadius: 12, objectFit: "contain", border: "1px solid rgba(255,255,255,0.12)" }}
+                  />
+                </div>
+              ) : null}
             </div>
             <div style={{ height: 1, background: "rgba(255,255,255,0.08)" }} />
-            <div style={{ padding: "10px 14px", display: "flex", gap: 10, color: "rgba(240,220,220,0.65)", fontSize: 12 }}>
-              <span>♥ {post.likes}</span>
-              <span>💬 {post.comments}</span>
-              <span style={{ marginLeft: "auto" }}>{post.bookmarked ? "🔖 Bookmarked" : ""}</span>
+            <div style={{ padding: "10px 14px", display: "flex", gap: 12, color: "rgba(240,220,220,0.65)", fontSize: 12, alignItems: "center" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <Icon name="heart" size={14} /> {post.likes}
+              </span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <Icon name="comment" size={14} /> {post.comments}
+              </span>
+              <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                {post.bookmarked ? (
+                  <>
+                    <Icon name="bookmark" size={14} /> Bookmarked
+                  </>
+                ) : null}
+              </span>
+            </div>
+            <div style={{ padding: "0 14px 12px" }}>
+              <SignatureFooter user={user} tokens={tokens} isLight={isLight} />
             </div>
           </div>
 
@@ -107,32 +168,24 @@ export function PostDetailModal({ open, postId, onClose }) {
             <div style={{ color: "rgba(240,220,220,0.6)", fontSize: 12 }}>{comments.length} total</div>
           </div>
 
-          <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
-            <input
-              value={commentText}
-              onChange={(e) => setCommentText(e.target.value)}
-              placeholder="Write a comment..."
-              style={inputStyle(false)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  const v = commentText.trim();
-                  if (!v) return;
-                  addComment(post.id, { userId: profile.id, text: v });
-                  setCommentText("");
-                }
-              }}
+          <div style={{ marginTop: 10 }}>
+            <FeedComposer
+              text={commentText}
+              setText={setCommentText}
+              selectedTag="General"
+              setSelectedTag={() => {}}
+              showTagPicker={false}
+              postTagOptions={["General"]}
+              imageUrl={commentImage}
+              setImageUrl={setCommentImage}
+              users={users}
+              disabled={false}
+              onSubmit={submitComment}
+              publishLabel="Post comment"
+              tokens={tokens}
+              isLight={isLight}
+              minRows={1}
             />
-            <button
-              onClick={() => {
-                const v = commentText.trim();
-                if (!v) return;
-                addComment(post.id, { userId: profile.id, text: v });
-                setCommentText("");
-              }}
-              style={actionBtnStyle("solid")}
-            >
-              Post
-            </button>
           </div>
 
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -145,7 +198,25 @@ export function PostDetailModal({ open, postId, onClose }) {
                     <div style={{ color: "rgba(240,220,220,0.6)", fontSize: 12 }}>@{u?.handle ?? "unknown"}</div>
                     <div style={{ marginLeft: "auto", color: "rgba(240,220,220,0.45)", fontSize: 11 }}>{new Date(c.ts).toLocaleString()}</div>
                   </div>
-                  <div style={{ marginTop: 6, color: "rgba(240,220,220,0.82)", fontSize: 13, lineHeight: 1.55 }}>{c.text}</div>
+                  <div style={{ marginTop: 6, color: "rgba(240,220,220,0.82)", fontSize: 13, lineHeight: 1.55 }}>
+                    <MentionBody
+                      text={c.text}
+                      handleToUserId={handleDir}
+                      color="#ff9ab0"
+                      onVisitUser={visitUserProfile}
+                      style={{ whiteSpace: "pre-wrap" }}
+                    />
+                  </div>
+                  {c.imageUrl ? (
+                    <div style={{ marginTop: 8 }}>
+                      <img
+                        src={c.imageUrl}
+                        alt=""
+                        style={{ maxHeight: 220, maxWidth: "100%", borderRadius: 10, objectFit: "contain", border: "1px solid rgba(255,255,255,0.10)" }}
+                      />
+                    </div>
+                  ) : null}
+                  <SignatureFooter user={u} tokens={tokens} isLight={isLight} compact />
                 </div>
               );
             })}
@@ -167,6 +238,8 @@ function actionBtnStyle(kind) {
     cursor: "pointer",
     fontWeight: 850,
     fontSize: 13,
+    display: "inline-flex",
+    alignItems: "center",
   };
 }
 
@@ -186,4 +259,3 @@ function inputStyle(isTextarea) {
     resize: isTextarea ? "vertical" : "none",
   };
 }
-

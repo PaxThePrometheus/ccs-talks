@@ -33,6 +33,8 @@ export function AppStateProvider({ children }) {
   /** Server-truth role for the current viewer; defaults to "student" until /api/auth/me responds. */
   const [role, setRole] = useState("student");
   const [accountEmail, setAccountEmail] = useState("");
+  /** When set, Profile screen shows this user's public card (read-only) until cleared. */
+  const [profileVisitUserId, setProfileVisitUserId] = useState(null);
 
   /** Skip first debounced PATCH after we just applied server snapshot (prevents PATCH loop). */
   const lastSyncedExtrasRef = useRef("");
@@ -68,7 +70,13 @@ export function AppStateProvider({ children }) {
       if (!isAuthed || !merged) return;
       try {
         const out = await api.patchProfile(merged);
-        if (out?.profile) setProfile((p) => ({ ...DEFAULT_PROFILE, ...p, ...out.profile }));
+        if (out?.profile) {
+          setProfile((p) => ({ ...DEFAULT_PROFILE, ...p, ...out.profile }));
+          setFeedUsersById((prev) => ({
+            ...prev,
+            [out.profile.id]: { ...DEFAULT_PROFILE, ...prev[out.profile.id], ...out.profile },
+          }));
+        }
       } catch (e) {
         if (e?.status === 409) window.alert("That handle is already taken.");
         else if (e?.status === 413) window.alert(e.message || "Image too large to save.");
@@ -196,6 +204,10 @@ export function AppStateProvider({ children }) {
     document.body.style.color = tokens.text;
   }, [prefs.mode]);
 
+  useEffect(() => {
+    if (page !== "profile") setProfileVisitUserId(null);
+  }, [page]);
+
   const users = useMemo(() => {
     return {
       ...MOCK_USERS,
@@ -225,21 +237,31 @@ export function AppStateProvider({ children }) {
   );
 
   const publishPost = useCallback(
-    async (content, tag) => {
-      await api.createPost({ content, tag });
+    async (content, tag, imageUrl = "") => {
+      await api.createPost({ content, tag, imageUrl });
       await refreshFeed();
     },
     [refreshFeed]
   );
 
+  const visitUserProfile = useCallback((userId) => {
+    if (!userId) return;
+    setProfileVisitUserId(String(userId));
+    setPage("profile");
+  }, [setPage]);
+
+  const resetProfileVisit = useCallback(() => {
+    setProfileVisitUserId(null);
+  }, []);
+
   const addActivity = (a) => {
     setActivities((xs) => [{ id: `${Date.now()}_${Math.random().toString(16).slice(2)}`, ts: Date.now(), ...a }, ...xs].slice(0, 200));
   };
 
-  const addComment = async (postId, { userId, text }) => {
+  const addComment = async (postId, { userId, text, imageUrl = "" }) => {
     const key = String(postId);
     try {
-      const out = await api.postComment(postId, text);
+      const out = await api.postComment(postId, text, imageUrl);
       mergeFeedUsers(out.users);
       if (out.post) upsertFeedPost(out.post);
 
@@ -392,6 +414,9 @@ export function AppStateProvider({ children }) {
     () => ({
       page,
       setPage,
+      profileVisitUserId,
+      visitUserProfile,
+      resetProfileVisit,
       profile,
       setProfile,
       users,
@@ -445,6 +470,9 @@ export function AppStateProvider({ children }) {
     }),
     [
       page,
+      profileVisitUserId,
+      visitUserProfile,
+      resetProfileVisit,
       profile,
       users,
       posts,

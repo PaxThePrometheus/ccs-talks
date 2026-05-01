@@ -46,6 +46,8 @@ export const ccsPosts = pgTable("ccs_posts", {
   userId: text("user_id").notNull(),
   content: text("content").notNull(),
   tag: text("tag").notNull().default("General"),
+  /** Data URL or https image attached to the post (optional). */
+  imageUrl: text("image_url").notNull().default(""),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
   likedBy: jsonb("liked_by").notNull(),
   commentCount: bigint("comment_count", { mode: "number" }).notNull().default(0),
@@ -57,6 +59,7 @@ export const ccsComments = pgTable("ccs_comments", {
   postId: text("post_id").notNull(),
   userId: text("user_id").notNull(),
   body: text("body").notNull(),
+  imageUrl: text("image_url").notNull().default(""),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 

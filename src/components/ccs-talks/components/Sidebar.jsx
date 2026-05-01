@@ -9,7 +9,7 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 export function Sidebar({ setPage, activeKey = "forum", mobileOpen = false, onMobileClose }) {
   const navItems = APP_CONFIG.nav.sidebarPrimary;
   const bottom = APP_CONFIG.nav.sidebarSecondary;
-  const { prefs, toggleMode, signOut, isAuthed, isStaff, role } = useAppState();
+  const { prefs, toggleMode, signOut, isAuthed, isStaff, role, resetProfileVisit } = useAppState();
   const isLight = prefs.mode === "light";
   /** Show the link only when the server has confirmed the viewer is staff (admin/moderator). */
   const showAdmin = isAuthed && isStaff;
@@ -24,6 +24,7 @@ export function Sidebar({ setPage, activeKey = "forum", mobileOpen = false, onMo
         return;
       }
     }
+    if (key === "profile") resetProfileVisit();
     setPage(key);
     onMobileClose?.();
   };

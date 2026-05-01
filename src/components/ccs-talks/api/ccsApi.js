@@ -51,8 +51,14 @@ export function getLanding() {
   });
 }
 
-export function registerAccount({ email, password, name }) {
-  return jsonFetch("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, name }) });
+export function registerAccount({ email, password, name, handle }) {
+  return jsonFetch("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, name, handle }) });
+}
+
+export function checkHandleAvailable(h) {
+  const qs = new URLSearchParams();
+  qs.set("h", h || "");
+  return jsonFetch(`/api/auth/handle-check?${qs.toString()}`, { method: "GET" });
 }
 
 export function loginAccount({ email, password }) {
@@ -63,8 +69,8 @@ export function logoutAccount() {
   return jsonFetch("/api/auth/logout", { method: "POST", body: JSON.stringify({}) });
 }
 
-export function createPost({ content, tag }) {
-  return jsonFetch("/api/posts", { method: "POST", body: JSON.stringify({ content, tag }) });
+export function createPost({ content, tag, imageUrl }) {
+  return jsonFetch("/api/posts", { method: "POST", body: JSON.stringify({ content, tag, imageUrl: imageUrl || "" }) });
 }
 
 export function patchPost(postId, content) {
@@ -83,8 +89,11 @@ export function getComments(postId) {
   return jsonFetch(`/api/posts/${encodeURIComponent(postId)}/comments`, { method: "GET" });
 }
 
-export function postComment(postId, text) {
-  return jsonFetch(`/api/posts/${encodeURIComponent(postId)}/comments`, { method: "POST", body: JSON.stringify({ text }) });
+export function postComment(postId, text, imageUrl) {
+  return jsonFetch(`/api/posts/${encodeURIComponent(postId)}/comments`, {
+    method: "POST",
+    body: JSON.stringify({ text, imageUrl: imageUrl || "" }),
+  });
 }
 
 export function patchProfile(patch) {

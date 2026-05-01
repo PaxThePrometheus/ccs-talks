@@ -49,6 +49,7 @@ function postRowToLegacy(row) {
     userId: row.userId,
     content: row.content,
     tag: row.tag,
+    imageUrl: row.imageUrl || "",
     createdAt: row.createdAt,
     likedBy: coerceArr(row.likedBy),
     commentCount: Number(row.commentCount ?? 0),
@@ -151,6 +152,38 @@ export async function uniqueHandle(db, candidate) {
   return h.slice(0, 32);
 }
 
+/** Case-insensitive: is this handle already assigned to any user? */
+export async function isHandleTaken(db, handle) {
+  const h = String(handle || "").trim().toLowerCase();
+  if (!h) return false;
+  const rows = await db.select({ profile: schema.ccsUsers.profile }).from(schema.ccsUsers);
+  for (const r of rows) {
+    const ph = r.profile && typeof r.profile === "object" ? r.profile.handle : "";
+    if (String(ph || "").trim().toLowerCase() === h) return true;
+  }
+  return false;
+}
+
+const MAX_POST_COMMENT_IMAGE_DATA_URL = 256_000;
+
+/** Clamp optional post/comment image: data URL (~250 KB max) or https URL. */
+export function clampPostCommentImageUrl(raw) {
+  if (raw == null || raw === "") return "";
+  const v = typeof raw === "string" ? raw : String(raw);
+  if (/^data:image\//i.test(v)) {
+    if (v.length > MAX_POST_COMMENT_IMAGE_DATA_URL) {
+      throw new Error(
+        `Image is too large for storage (${Math.round(v.length / 1024)} KB). Max ~${Math.round(MAX_POST_COMMENT_IMAGE_DATA_URL / 1024)} KB, or paste an external https URL.`,
+      );
+    }
+    return v;
+  }
+  if (/^https?:\/\//i.test(v)) {
+    return v.slice(0, 4096);
+  }
+  return v.slice(0, 4096);
+}
+
 export async function insertSession(db, userId, maxAgeDays = 14) {
   const token = makeSessionToken();
   const expiresAt = Date.now() + maxAgeDays * 24 * 60 * 60 * 1000;
@@ -163,13 +196,43 @@ function isUniqueViolation(err) {
   return c === "23505" || String(c) === "23505";
 }
 
-export async function registerAccountRow(email, password, name, suggestedHandle) {
+function sanitizeRequestedHandle(raw) {
+  return String(raw || "")
+    .trim()
+    .replace(/[^\w.]/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 32);
+}
+
+/**
+ * @param {string} email
+ * @param {string} password
+ * @param {string} name
+ * @param {string} [emailLocalSuggested] — legacy: handle seed from email local-part
+ * @param {{ requestedHandle?: string }} [opts]
+ */
+export async function registerAccountRow(email, password, name, emailLocalSuggested, opts = {}) {
   const db = await getDb();
   if (await findUserByEmail(email)) return { conflict: true };
 
   const id = makeUserId();
   const { salt, hash } = newPasswordRecord(password);
-  const handle = await uniqueHandle(db, suggestedHandle);
+
+  const explicit = sanitizeRequestedHandle(opts.requestedHandle || "");
+  const fromEmail = String(emailLocalSuggested || "student")
+    .replace(/[^\w.]/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 28)
+    .toLowerCase() || "student";
+
+  let handle;
+  if (explicit) {
+    if (await isHandleTaken(db, explicit)) return { handleTaken: true };
+    handle = explicit;
+  } else {
+    handle = await uniqueHandle(db, fromEmail);
+  }
+
   const profile = { ...DEFAULT_PROFILE, id, name, handle };
 
   try {
@@ -225,8 +288,14 @@ export async function clientPostPreview(viewerUserId, postId) {
   return cards[0] ?? null;
 }
 
-export async function createUserPost(viewerUserId, content, tag) {
+export async function createUserPost(viewerUserId, content, tag, imageUrl = "") {
   const db = await getDb();
+  let clampedImage = "";
+  try {
+    clampedImage = clampPostCommentImageUrl(imageUrl);
+  } catch {
+    return { imageTooLarge: true };
+  }
   const id = `p_${randomUUID()}`;
   const now = Date.now();
   await db.insert(schema.ccsPosts).values({
@@ -234,6 +303,7 @@ export async function createUserPost(viewerUserId, content, tag) {
     userId: viewerUserId,
     content,
     tag: tag || "General",
+    imageUrl: clampedImage,
     createdAt: now,
     likedBy: [],
     commentCount: 0,
@@ -311,16 +381,29 @@ export async function listCommentsEnvelope(postId) {
   const users = authorProfilesByIds({ users: shimUsers, posts: [] }, ids);
 
   return {
-    mapped: rows.map((c) => ({ id: c.id, userId: c.userId, text: c.body, ts: c.createdAt })),
+    mapped: rows.map((c) => ({
+      id: c.id,
+      userId: c.userId,
+      text: c.body,
+      ts: c.createdAt,
+      imageUrl: c.imageUrl || "",
+    })),
     users,
   };
 }
 
-export async function addCommentEnvelope(postId, viewerUserId, text) {
+export async function addCommentEnvelope(postId, viewerUserId, text, imageUrl = "") {
   const db = await getDb();
 
   const [postRow] = await db.select().from(schema.ccsPosts).where(eq(schema.ccsPosts.id, postId)).limit(1);
   if (!postRow) return { missing: true };
+
+  let clampedImage = "";
+  try {
+    clampedImage = clampPostCommentImageUrl(imageUrl);
+  } catch {
+    return { imageTooLarge: true };
+  }
 
   const id = `c_${randomUUID()}`;
   const createdAt = Date.now();
@@ -330,6 +413,7 @@ export async function addCommentEnvelope(postId, viewerUserId, text) {
     postId,
     userId: viewerUserId,
     body: text,
+    imageUrl: clampedImage,
     createdAt,
   });
 
@@ -338,12 +422,18 @@ export async function addCommentEnvelope(postId, viewerUserId, text) {
 
   const postCard = await clientPostPreview(viewerUserId, postId);
 
-  /** Viewer row snippet for avatar names */
-  const [viewerRow] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, viewerUserId)).limit(1);
-  const users = viewerRow?.profile ? { [viewerUserId]: toPublicProfile(viewerRow.profile) } : {};
+  const commentRows = await db
+    .select()
+    .from(schema.ccsComments)
+    .where(eq(schema.ccsComments.postId, postId));
+  const ids = [...new Set(commentRows.map((r) => r.userId).filter(Boolean))];
+  const userRows =
+    ids.length === 0 ? [] : await db.select().from(schema.ccsUsers).where(inArray(schema.ccsUsers.id, ids));
+  const shimUsers = userRows.map(userRowToShim);
+  const users = authorProfilesByIds({ users: shimUsers, posts: [] }, ids);
 
   return {
-    comment: { id, userId: viewerUserId, text, ts: createdAt },
+    comment: { id, userId: viewerUserId, text, ts: createdAt, imageUrl: clampedImage },
     post: postCard,
     users,
   };
@@ -361,7 +451,9 @@ const PROFILE_KEYS = new Set([
   "focus",
   "org",
   "bio",
-  "badges",
+  "signature",
+  "signatureImage",
+  "signatureLink",
   "avatarColor",
   "avatarAccent",
   "bannerColor",
@@ -378,7 +470,8 @@ function clampMediaField(key, raw) {
   const v = typeof raw === "string" ? raw : String(raw);
   if (/^data:image\//i.test(v)) {
     if (v.length > MAX_DATA_URL_LEN) {
-      const label = key === "avatarImage" ? "Avatar" : "Banner";
+      const label =
+        key === "avatarImage" ? "Avatar" : key === "signatureImage" ? "Signature image" : "Banner";
       throw new Error(`${label} upload is too large for server storage (${Math.round(v.length / 1024)} KB). Use a smaller image or an external URL.`);
     }
     return v;
@@ -449,9 +542,11 @@ export async function patchAccountBundles(userId, body) {
               .slice(0, 32) || nextProfile.handle;
         } else if (k === "name") nextProfile.name = String(v || "").slice(0, 80);
         else if (k === "bio") nextProfile.bio = String(v || "").slice(0, 280);
-        else if (k === "badges") {
-          nextProfile.badges = Array.isArray(v) ? v.slice(0, 20).map((x) => String(x || "").slice(0, 40)) : nextProfile.badges;
-        } else if (k === "avatarImage" || k === "bannerImage") nextProfile[k] = clampMediaField(k, v);
+        else if (k === "signature") nextProfile.signature = String(v || "").slice(0, 280);
+        else if (k === "signatureLink") {
+          const s = String(v || "").trim().slice(0, 4096);
+          nextProfile.signatureLink = /^https?:\/\//i.test(s) ? s : "";
+        } else if (k === "avatarImage" || k === "bannerImage" || k === "signatureImage") nextProfile[k] = clampMediaField(k, v);
         else nextProfile[k] = v;
       }
     } catch (e) {

@@ -52,6 +52,8 @@ export function ddlFragments() {
     `ALTER TABLE ccs_users ADD COLUMN IF NOT EXISTS created_at bigint`,
     `CREATE INDEX IF NOT EXISTS ccs_users_role_idx ON ccs_users (role)`,
     `CREATE INDEX IF NOT EXISTS ccs_users_profile_handle_expr_idx ON ccs_users ((LOWER(profile->>'handle')))`,
+    `ALTER TABLE ccs_posts ADD COLUMN IF NOT EXISTS image_url text NOT NULL DEFAULT ''`,
+    `ALTER TABLE ccs_comments ADD COLUMN IF NOT EXISTS image_url text NOT NULL DEFAULT ''`,
     `CREATE TABLE IF NOT EXISTS ccs_audit_log (
       id text PRIMARY KEY,
       actor_id text NOT NULL,

@@ -62,7 +62,9 @@ export function MiniProfilePreview({ visible, user, anchorRect, onRequestClose, 
               height: 44,
               borderRadius: 14,
               border: "1px solid rgba(255,255,255,0.16)",
-              background: "linear-gradient(135deg, rgba(255,96,128,0.30), rgba(155,0,40,0.60))",
+              background: user.avatarImage
+                ? `url(${user.avatarImage}) center/cover no-repeat`
+                : "linear-gradient(135deg, rgba(255,96,128,0.30), rgba(155,0,40,0.60))",
               boxShadow: "0 12px 28px rgba(0,0,0,0.35)",
             }}
           />
@@ -80,6 +82,12 @@ export function MiniProfilePreview({ visible, user, anchorRect, onRequestClose, 
           {user.program} · {user.college}
         </div>
         <div style={{ marginTop: 6, color: "rgba(240,220,220,0.62)", fontSize: 12, lineHeight: 1.55 }}>{user.bio}</div>
+        {user.signature ? (
+          <div style={{ marginTop: 6, color: "rgba(255,200,210,0.75)", fontSize: 11, lineHeight: 1.45, fontStyle: "italic", whiteSpace: "pre-wrap" }}>
+            {String(user.signature).split("\n")[0]}
+            {String(user.signature).includes("\n") ? "…" : ""}
+          </div>
+        ) : null}
 
         <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
           {(user.badges || []).slice(0, 3).map((b) => (

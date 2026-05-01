@@ -90,6 +90,10 @@ export const DEFAULT_PROFILE = {
   org: "CCS Dev Guild",
   bio: "Computer science student building expressive UI systems. Interests: UX engineering, realtime graphics, and app polish.",
   badges: ["Dean’s Lister", "Hackathon ’25", "Org Member"],
+  /** Forum-style footer shown under posts/comments (plain text + optional image/link). */
+  signature: "",
+  signatureImage: "",
+  signatureLink: "",
   // --- visual identity (editable) ---
   avatarColor: "#9b0028",
   avatarAccent: "#ff6080",

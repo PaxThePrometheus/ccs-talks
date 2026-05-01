@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { GSAP_CDN } from "../cdn";
 import { useScript } from "../useScript";
 import { useAppState } from "../state/AppState";
+import { Icon } from "../ui/Icon";
+import { MentionBody, buildHandleDirectory } from "./MentionBody";
+import { SignatureFooter } from "./SignatureFooter";
 
 export function PostCard({
   post,
@@ -19,8 +22,9 @@ export function PostCard({
 }) {
   const cardRef = useRef(null);
   const gsapLoaded = useScript(GSAP_CDN);
-  const { tokens, prefs } = useAppState();
+  const { tokens, prefs, users, visitUserProfile } = useAppState();
   const isLight = prefs.mode === "light";
+  const handleDir = useMemo(() => buildHandleDirectory(users), [users]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !cardRef.current) return undefined;
@@ -138,25 +142,48 @@ export function PostCard({
       <div style={{ height: 1, background: dividerColor }} />
 
       <div style={{ padding: "0.95rem 1.2rem 1rem" }}>
-        <p style={{ color: tokens.text, fontSize: 15, lineHeight: 1.65, margin: 0 }}>{post.content}</p>
+        <p style={{ color: tokens.text, fontSize: 15, lineHeight: 1.65, margin: 0 }}>
+          <MentionBody
+            text={post.content}
+            handleToUserId={handleDir}
+            color={tokens.accent}
+            onVisitUser={readOnly ? undefined : visitUserProfile}
+            style={{ whiteSpace: "pre-wrap" }}
+          />
+        </p>
+        {post.imageUrl ? (
+          <div style={{ marginTop: 10 }}>
+            <img
+              src={post.imageUrl}
+              alt=""
+              style={{
+                maxHeight: 360,
+                maxWidth: "100%",
+                borderRadius: 12,
+                objectFit: "contain",
+                border: `1px solid ${dividerColor}`,
+              }}
+            />
+          </div>
+        ) : null}
       </div>
 
       <div style={{ height: 1, background: dividerColor }} />
 
       <div style={{ padding: "0.65rem 0.85rem", display: "flex", gap: 10, alignItems: "center" }}>
         <ActionBtn disabled={readOnly} onClick={() => !readOnly && onLike?.(post.id)} muted={muted} hover="#ff6080">
-          ♥ {post.likes}
+          <Icon name="heart" size={15} /> {post.likes}
         </ActionBtn>
         <Sep color={dividerColor} />
         <ActionBtn onClick={() => onOpenComments?.(post.id)} muted={muted}>
-          💬 {post.comments}
+          <Icon name="comment" size={15} /> {post.comments}
         </ActionBtn>
         <Sep color={dividerColor} />
         <ActionBtn disabled={readOnly} onClick={() => !readOnly && onShare?.(post.id)} muted={muted}>
-          ↗ Share
+          <Icon name="share" size={15} /> Share
         </ActionBtn>
         <ActionBtn disabled={readOnly} onClick={() => !readOnly && onReport?.(post.id)} muted={subtle}>
-          ⚑ Report
+          <Icon name="flag" size={15} /> Report
         </ActionBtn>
         <button
           disabled={readOnly}
@@ -173,10 +200,17 @@ export function PostCard({
             transition: "color 0.2s",
             borderRadius: 10,
             opacity: readOnly ? 0.55 : 1,
+            display: "inline-flex",
+            alignItems: "center",
           }}
+          title={post.bookmarked ? "Remove bookmark" : "Bookmark"}
         >
-          🔖
+          <Icon name="bookmark" size={18} />
         </button>
+      </div>
+
+      <div style={{ padding: "0 1.2rem 1rem" }}>
+        <SignatureFooter user={user} tokens={tokens} isLight={isLight} />
       </div>
     </div>
   );
@@ -202,8 +236,12 @@ function ActionBtn({ children, onClick, disabled, muted, hover }) {
         transition: "color 0.15s",
         opacity: disabled ? 0.55 : 1,
       }}
-      onMouseEnter={(e) => { if (hover && !disabled) e.currentTarget.style.color = hover; }}
-      onMouseLeave={(e) => (e.currentTarget.style.color = muted)}
+      onMouseEnter={(e) => {
+        if (hover && !disabled) e.currentTarget.style.color = hover;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.color = muted;
+      }}
     >
       {children}
     </button>

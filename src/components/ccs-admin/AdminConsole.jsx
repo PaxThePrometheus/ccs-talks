@@ -157,11 +157,58 @@ function OverviewPane({ onError }) {
 }
 
 /** ---------- users ---------- */
+function BadgesEditor({ userId, badges, catalog, onSave }) {
+  const [draft, setDraft] = useState("");
+  const list = Array.isArray(badges) ? badges : [];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0, maxWidth: 420 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {list.map((b) => (
+          <button
+            key={b}
+            type="button"
+            onClick={() => onSave(list.filter((x) => x !== b))}
+            style={{ ...tag("neutral"), cursor: "pointer", border: "none" }}
+            title="Remove"
+          >
+            {b} ×
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <input list={`badge-cat-${userId}`} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add badge…" style={{ ...inp(160), fontSize: 12 }} />
+        <datalist id={`badge-cat-${userId}`}>
+          {(catalog || []).map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+        <button
+          type="button"
+          onClick={() => {
+            const v = draft.trim().slice(0, 40);
+            if (!v) return;
+            if (list.includes(v) || list.length >= 8) {
+              setDraft("");
+              return;
+            }
+            onSave([...list, v]);
+            setDraft("");
+          }}
+          style={{ ...btn("ghost"), padding: "6px 10px", fontSize: 12 }}
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function UsersPane({ viewer, onError, inviteRequired }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
+  const [badgeCatalog, setBadgeCatalog] = useState([]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -182,6 +229,19 @@ function UsersPane({ viewer, onError, inviteRequired }) {
     const t = setTimeout(reload, 200);
     return () => clearTimeout(t);
   }, [reload]);
+
+  useEffect(() => {
+    let alive = true;
+    void jsonFetch("/api/admin/landing")
+      .then((d) => {
+        if (!alive) return;
+        setBadgeCatalog(Array.isArray(d?.cms?.badgeCatalog) ? d.cms.badgeCatalog : []);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   async function patchUser(id, patch) {
     try {
@@ -234,6 +294,15 @@ function UsersPane({ viewer, onError, inviteRequired }) {
                   @{u.profile?.handle || "—"} · {u.email} · <code style={code}>{u.id}</code>
                 </div>
                 {u.banned && u.bannedReason && <div style={{ fontSize: 12, color: t.bad, marginTop: 2 }}>“{u.bannedReason}”</div>}
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>BADGES</div>
+                  <BadgesEditor
+                    userId={u.id}
+                    badges={u.profile?.badges}
+                    catalog={badgeCatalog}
+                    onSave={(next) => patchUser(u.id, { badges: next })}
+                  />
+                </div>
               </div>
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

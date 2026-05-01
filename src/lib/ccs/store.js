@@ -20,6 +20,10 @@ import {
   sanitizeProfileSelectFields,
 } from "./profileOptions";
 import { toPublicProfile } from "./publicUser";
+import {
+  MAX_POST_COMMENT_IMAGE_DATA_URL_CHARS,
+  MAX_PROFILE_MEDIA_DATA_URL_CHARS,
+} from "./imageUploadLimits";
 import * as schema from "./schema";
 
 const PRESENCE_WINDOW_MS = 120_000;
@@ -176,16 +180,14 @@ export async function isHandleTaken(db, handle) {
   return false;
 }
 
-const MAX_POST_COMMENT_IMAGE_DATA_URL = 256_000;
-
 /** Clamp optional post/comment image: data URL (~250 KB max) or https URL. */
 export function clampPostCommentImageUrl(raw) {
   if (raw == null || raw === "") return "";
   const v = typeof raw === "string" ? raw : String(raw);
   if (/^data:image\//i.test(v)) {
-    if (v.length > MAX_POST_COMMENT_IMAGE_DATA_URL) {
+    if (v.length > MAX_POST_COMMENT_IMAGE_DATA_URL_CHARS) {
       throw new Error(
-        `Image is too large for storage (${Math.round(v.length / 1024)} KB). Max ~${Math.round(MAX_POST_COMMENT_IMAGE_DATA_URL / 1024)} KB, or paste an external https URL.`,
+        `Image is too large for storage (${Math.round(v.length / 1024)} KB). Max ~${Math.round(MAX_POST_COMMENT_IMAGE_DATA_URL_CHARS / 1024)} KB, or paste an external https URL.`,
       );
     }
     return v;
@@ -476,14 +478,13 @@ const PROFILE_KEYS = new Set([
 /** User + staff profile patch field names (values applied in `patchAccountBundles` / admin editor). */
 export const PROFILE_PATCH_FIELD_KEYS = PROFILE_KEYS;
 
-const MAX_DATA_URL_LEN = 360_000;
 const MAX_REMOTE_IMAGE_URL_LEN = 4096;
 
 export function clampMediaField(key, raw) {
   if (raw == null || raw === "") return "";
   const v = typeof raw === "string" ? raw : String(raw);
   if (/^data:image\//i.test(v)) {
-    if (v.length > MAX_DATA_URL_LEN) {
+    if (v.length > MAX_PROFILE_MEDIA_DATA_URL_CHARS) {
       const label =
         key === "avatarImage" ? "Avatar" : key === "signatureImage" ? "Signature image" : "Banner";
       throw new Error(`${label} upload is too large for server storage (${Math.round(v.length / 1024)} KB). Use a smaller image or an external URL.`);

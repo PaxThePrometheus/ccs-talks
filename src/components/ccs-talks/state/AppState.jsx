@@ -11,7 +11,7 @@ import {
   normalizePrefs,
   normalizeSubs,
 } from "@/lib/ccs/accountDefaults";
-import { DEFAULT_PROFILE, MOCK_POSTS, MOCK_USERS } from "../config/appConfig";
+import { DEFAULT_PROFILE } from "../config/appConfig";
 import { useLocalStorageState } from "./useLocalStorageState";
 import { getThemeTokens } from "../theme";
 
@@ -21,7 +21,7 @@ export function AppStateProvider({ children }) {
   const [profile, setProfile] = useLocalStorageState("ccs.profile.v1", DEFAULT_PROFILE);
   const [feedUsersById, setFeedUsersById] = useState({});
   const [page, setPage] = useState("landing");
-  const [posts, setPosts] = useLocalStorageState("ccs.posts.v1", MOCK_POSTS);
+  const [posts, setPosts] = useLocalStorageState("ccs.posts.v1", []);
   const [commentsByPostId, setCommentsByPostId] = useLocalStorageState("ccs.comments.v1", {});
   const [activities, setActivities] = useLocalStorageState("ccs.activities.v1", []);
   const [friends, setFriends] = useLocalStorageState("ccs.friends.v1", CCS_DEFAULT_FRIENDS);
@@ -235,7 +235,6 @@ export function AppStateProvider({ children }) {
 
   const users = useMemo(() => {
     return {
-      ...MOCK_USERS,
       ...feedUsersById,
       [profile.id]: profile,
     };

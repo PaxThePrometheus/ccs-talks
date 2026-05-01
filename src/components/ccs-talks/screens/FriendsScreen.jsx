@@ -2,20 +2,26 @@
 
 import { useMemo, useState } from "react";
 import { useAppState } from "../state/AppState";
-import { MOCK_USERS } from "../config/appConfig";
 
 export function FriendsScreen() {
-  const { friends, users, acceptFriend, declineFriend, removeFriend, cancelOutgoing, sendFriendRequest, tokens, prefs } = useAppState();
+  const { friends, users, profile, acceptFriend, declineFriend, removeFriend, cancelOutgoing, sendFriendRequest, tokens, prefs } = useAppState();
   const isLight = prefs.mode === "light";
   const [tab, setTab] = useState("all");
   const [q, setQ] = useState("");
 
-  const allMockIds = Object.keys(MOCK_USERS);
+  const viewerId = profile?.id;
 
-  const suggestionsBase = useMemo(
-    () => allMockIds.filter((id) => !friends.friends.includes(id) && !friends.pending.includes(id) && !friends.outgoing.includes(id)),
-    [allMockIds, friends]
-  );
+  const suggestionsBase = useMemo(() => {
+    return Object.keys(users).filter(
+      (id) =>
+        id &&
+        id !== viewerId &&
+        users[id] &&
+        !friends.friends.includes(id) &&
+        !friends.pending.includes(id) &&
+        !friends.outgoing.includes(id),
+    );
+  }, [users, viewerId, friends]);
 
   const filterFn = (id) => {
     const u = users[id];
@@ -104,7 +110,9 @@ export function FriendsScreen() {
               { label: "Add friend", kind: "solid", onClick: () => sendFriendRequest(id) },
             ]} />
           ))}
-          {tab === "suggestions" && suggestionsBase.length === 0 && <Empty text="No suggestions right now." tokens={tokens} />}
+          {tab === "suggestions" && suggestionsBase.length === 0 && (
+            <Empty text="No suggestions yet — people who appear in your feed can show up here once their profiles load." tokens={tokens} />
+          )}
         </div>
       </div>
     </div>

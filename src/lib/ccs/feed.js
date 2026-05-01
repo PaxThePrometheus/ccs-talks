@@ -1,4 +1,3 @@
-import { MOCK_USERS } from "@/components/ccs-talks/config/appConfig";
 import { initialsFromName, relativeTime } from "./format";
 import { toPublicProfile } from "./publicUser";
 
@@ -10,12 +9,7 @@ export function authorProfilesByIds(db, userIds) {
   }
   for (const id of userIds) {
     if (!id) continue;
-    if (byId[id]) {
-      map[id] = toPublicProfile(byId[id]);
-      continue;
-    }
-    const phantom = MOCK_USERS[id];
-    if (phantom) map[id] = toPublicProfile(phantom);
+    if (byId[id]) map[id] = toPublicProfile(byId[id]);
   }
   return map;
 }

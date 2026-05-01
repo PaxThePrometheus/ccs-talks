@@ -25,9 +25,9 @@ export const CCS_DEFAULT_PREFS = {
 const PREFS_KEYS = new Set(Object.keys(CCS_DEFAULT_PREFS));
 
 export const CCS_DEFAULT_FRIENDS = {
-  friends: ["u_renz", "u_maica", "u_tricia"],
-  pending: ["u_josh"],
-  outgoing: ["u_miguel"],
+  friends: [],
+  pending: [],
+  outgoing: [],
 };
 
 export const CCS_DEFAULT_SUBS = {
@@ -36,7 +36,7 @@ export const CCS_DEFAULT_SUBS = {
     { tag: "Events", notify: true },
     { tag: "Tech", notify: false },
   ],
-  follows: ["u_renz", "u_tricia"],
+  follows: [],
 };
 
 export function normalizePrefs(partial) {

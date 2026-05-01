@@ -1,10 +1,12 @@
 "use client";
 
+import { prepareProfileImageFileForUpload } from "@/lib/ccs/imageCompressClient";
 import { CCS_OLFU_UNIVERSITY } from "@/lib/ccs/profileOptions";
 import { useEffect, useRef, useState } from "react";
 import * as api from "../api/ccsApi";
 import { useAppState } from "../state/AppState";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ImageCropModal } from "./ImageCropModal";
 
 const SECTIONS = [
   { key: "account", icon: "👤", label: "Account", hint: "Identity, profile, language" },
@@ -14,26 +16,22 @@ const SECTIONS = [
   { key: "data", icon: "🗂", label: "Your data", hint: "Export, delete, reset" },
 ];
 
-function readFileAsDataURL(file) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onerror = reject;
-    r.onload = () => resolve(r.result);
-    r.readAsDataURL(file);
-  });
-}
-
 export function AccountCenterModal({ open, onCancel }) {
   const { profile, prefs, updatePrefs, signOut, persistFullProfile, accountEmail, usernameCooldownUntil } = useAppState();
   const [section, setSection] = useState("account");
   const [draft, setDraft] = useState(profile);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [fieldOptions, setFieldOptions] = useState(null);
+  const [avatarCropSrc, setAvatarCropSrc] = useState(null);
   const fileInput = useRef(null);
 
   useEffect(() => {
     if (open) setDraft(profile);
   }, [open, profile]);
+
+  useEffect(() => {
+    if (!open) setAvatarCropSrc(null);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -145,9 +143,37 @@ export function AccountCenterModal({ open, onCancel }) {
                   </Field>
                   <Field label="Bio"><textarea rows={3} style={{ ...inp(420), height: 84 }} value={draft.bio} onChange={(e) => set("bio", e.target.value)} /></Field>
                   <Field label="Avatar (upload)">
-                    <input ref={fileInput} type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; if (f.size > 4 * 1024 * 1024) { alert("Image too large (>4MB)"); return; } set("avatarImage", await readFileAsDataURL(f)); }} />
-                    <button onClick={() => fileInput.current?.click()} style={btn("ghost")}>Upload image…</button>
-                    {draft.avatarImage && <button onClick={() => set("avatarImage", "")} style={btn("ghost")}>Remove</button>}
+                    <input
+                      ref={fileInput}
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!f) return;
+                        try {
+                          const url = await prepareProfileImageFileForUpload(f, { contextLabel: "Avatar image" });
+                          if (!url) return;
+                          setAvatarCropSrc(url);
+                        } catch (err) {
+                          console.warn("[ccs] avatar upload", err);
+                        }
+                      }}
+                    />
+                    <button type="button" onClick={() => fileInput.current?.click()} style={btn("ghost")}>
+                      Upload image…
+                    </button>
+                    {draft.avatarImage && /^data:image|^https?:\/\//i.test(draft.avatarImage) ? (
+                      <button type="button" onClick={() => setAvatarCropSrc(draft.avatarImage)} style={btn("ghost")}>
+                        Crop &amp; zoom…
+                      </button>
+                    ) : null}
+                    {draft.avatarImage ? (
+                      <button type="button" onClick={() => set("avatarImage", "")} style={btn("ghost")}>
+                        Remove
+                      </button>
+                    ) : null}
                   </Field>
                 </Group>
 
@@ -280,6 +306,18 @@ export function AccountCenterModal({ open, onCancel }) {
           </div>
         </div>
       </div>
+
+      <ImageCropModal
+        open={!!avatarCropSrc}
+        variant="avatar"
+        imageSrc={avatarCropSrc || ""}
+        title="Crop avatar"
+        onCancel={() => setAvatarCropSrc(null)}
+        onComplete={(dataUrl) => {
+          set("avatarImage", dataUrl);
+          setAvatarCropSrc(null);
+        }}
+      />
 
       <ConfirmDialog
         open={confirmSignOut}

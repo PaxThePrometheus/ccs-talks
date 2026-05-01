@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { prepareImageFileForUpload } from "@/lib/ccs/imageCompressClient";
 import { Icon } from "./Icon";
-
-const MAX_LOCAL_IMAGE_BYTES = 256_000;
 
 function buildUserList(users) {
   if (!users || typeof users !== "object") return [];
@@ -97,17 +96,16 @@ export function FeedComposer({
     const f = e.target.files?.[0];
     e.target.value = "";
     if (!f || !f.type.startsWith("image/")) return;
-    if (f.size > MAX_LOCAL_IMAGE_BYTES) {
-      window.alert(`Image must be under ~${Math.round(MAX_LOCAL_IMAGE_BYTES / 1024)} KB, or paste an https URL instead.`);
-      return;
-    }
-    const fr = new FileReader();
-    fr.onload = () => {
-      const url = typeof fr.result === "string" ? fr.result : "";
-      setImageUrl(url);
-      setImgOpen(false);
-    };
-    fr.readAsDataURL(f);
+    void (async () => {
+      try {
+        const url = await prepareImageFileForUpload(f, { contextLabel: "Post image" });
+        if (!url) return;
+        setImageUrl(url);
+        setImgOpen(false);
+      } catch (err) {
+        console.warn("[ccs] post image prepare", err);
+      }
+    })();
   };
 
   const applyPasteUrl = () => {

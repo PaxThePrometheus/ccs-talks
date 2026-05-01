@@ -1,6 +1,8 @@
 "use client";
 
+import { prepareProfileImageFileForUpload } from "@/lib/ccs/imageCompressClient";
 import { useEffect, useRef, useState } from "react";
+import { ImageCropModal } from "./ImageCropModal";
 
 const COLOR_PRESETS = [
   ["#9b0028", "#ff6080"],
@@ -13,17 +15,9 @@ const COLOR_PRESETS = [
   ["#fff5f7", "#ff6080"],
 ];
 
-function readFileAsDataURL(file) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onerror = reject;
-    r.onload = () => resolve(r.result);
-    r.readAsDataURL(file);
-  });
-}
-
 export function AvatarBannerModal({ open, profile, onCancel, onSave }) {
   const [draft, setDraft] = useState(profile);
+  const [cropTarget, setCropTarget] = useState(null);
   const avFile = useRef(null);
   const bnFile = useRef(null);
 
@@ -31,20 +25,29 @@ export function AvatarBannerModal({ open, profile, onCancel, onSave }) {
     if (open) setDraft(profile);
   }, [open, profile]);
 
+  useEffect(() => {
+    if (!open) setCropTarget(null);
+  }, [open]);
+
   if (!open) return null;
 
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
 
-  const handleFile = async (which, file) => {
+  async function enqueueCropFromFile(variant, file) {
     if (!file) return;
-    if (file.size > 4 * 1024 * 1024) {
-      alert("Image is over 4 MB. Please pick a smaller file or use a URL.");
-      return;
+    const label = variant === "banner" ? "Banner image" : "Avatar image";
+    try {
+      const url = await prepareProfileImageFileForUpload(file, { contextLabel: label });
+      if (!url) return;
+      setCropTarget({ variant, src: url });
+    } catch (e) {
+      console.warn("[ccs] avatar/banner upload", e);
     }
-    const url = await readFileAsDataURL(file);
-    if (which === "avatar") set("avatarImage", url);
-    else set("bannerImage", url);
-  };
+  }
+
+  function canCropUrl(src) {
+    return !!src && (src.startsWith("data:image") || /^https?:\/\//i.test(src));
+  }
 
   return (
     <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 520, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
@@ -81,15 +84,38 @@ export function AvatarBannerModal({ open, profile, onCancel, onSave }) {
           <Card title="Avatar">
             <Subtitle>Image</Subtitle>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <input type="file" ref={avFile} accept="image/*" onChange={(e) => handleFile("avatar", e.target.files?.[0])} style={{ display: "none" }} />
-              <button onClick={() => avFile.current?.click()} style={btn("ghost")}>Upload…</button>
+              <input
+                type="file"
+                ref={avFile}
+                accept="image/*"
+                onChange={(e) => {
+                  void enqueueCropFromFile("avatar", e.target.files?.[0]).finally(() => {
+                    e.target.value = "";
+                  });
+                }}
+                style={{ display: "none" }}
+              />
+              <button type="button" onClick={() => avFile.current?.click()} style={btn("ghost")}>
+                Upload…
+              </button>
               <input
                 placeholder="Paste image URL"
                 value={draft.avatarImage || ""}
                 onChange={(e) => set("avatarImage", e.target.value)}
                 style={inp(220)}
               />
-              {draft.avatarImage && <button onClick={() => set("avatarImage", "")} style={btn("ghost")}>Remove</button>}
+              {draft.avatarImage ? (
+                <>
+                  {canCropUrl(draft.avatarImage) ? (
+                    <button type="button" onClick={() => setCropTarget({ variant: "avatar", src: draft.avatarImage })} style={btn("ghost")}>
+                      Crop &amp; zoom…
+                    </button>
+                  ) : null}
+                  <button type="button" onClick={() => set("avatarImage", "")} style={btn("ghost")}>
+                    Remove
+                  </button>
+                </>
+              ) : null}
             </div>
 
             <Subtitle>Or use a color gradient</Subtitle>
@@ -103,15 +129,38 @@ export function AvatarBannerModal({ open, profile, onCancel, onSave }) {
           <Card title="Banner">
             <Subtitle>Image</Subtitle>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <input type="file" ref={bnFile} accept="image/*" onChange={(e) => handleFile("banner", e.target.files?.[0])} style={{ display: "none" }} />
-              <button onClick={() => bnFile.current?.click()} style={btn("ghost")}>Upload…</button>
+              <input
+                type="file"
+                ref={bnFile}
+                accept="image/*"
+                onChange={(e) => {
+                  void enqueueCropFromFile("banner", e.target.files?.[0]).finally(() => {
+                    e.target.value = "";
+                  });
+                }}
+                style={{ display: "none" }}
+              />
+              <button type="button" onClick={() => bnFile.current?.click()} style={btn("ghost")}>
+                Upload…
+              </button>
               <input
                 placeholder="Paste image URL"
                 value={draft.bannerImage || ""}
                 onChange={(e) => set("bannerImage", e.target.value)}
                 style={inp(220)}
               />
-              {draft.bannerImage && <button onClick={() => set("bannerImage", "")} style={btn("ghost")}>Remove</button>}
+              {draft.bannerImage ? (
+                <>
+                  {canCropUrl(draft.bannerImage) ? (
+                    <button type="button" onClick={() => setCropTarget({ variant: "banner", src: draft.bannerImage })} style={btn("ghost")}>
+                      Crop &amp; zoom…
+                    </button>
+                  ) : null}
+                  <button type="button" onClick={() => set("bannerImage", "")} style={btn("ghost")}>
+                    Remove
+                  </button>
+                </>
+              ) : null}
             </div>
 
             <Subtitle>Or use a color gradient</Subtitle>
@@ -123,6 +172,20 @@ export function AvatarBannerModal({ open, profile, onCancel, onSave }) {
           </Card>
         </div>
       </div>
+
+      <ImageCropModal
+        open={!!cropTarget}
+        variant={cropTarget?.variant || "avatar"}
+        imageSrc={cropTarget?.src || ""}
+        title={cropTarget?.variant === "banner" ? "Crop banner" : "Crop avatar"}
+        onCancel={() => setCropTarget(null)}
+        onComplete={(dataUrl) => {
+          if (!cropTarget) return;
+          const key = cropTarget.variant === "banner" ? "bannerImage" : "avatarImage";
+          set(key, dataUrl);
+          setCropTarget(null);
+        }}
+      />
     </div>
   );
 }

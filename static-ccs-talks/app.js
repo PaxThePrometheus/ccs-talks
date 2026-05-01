@@ -97,82 +97,6 @@ const APP_CONFIG = {
   },
 };
 
-const MOCK_POSTS = [
-  {
-    id: 1,
-    userId: "u_renz",
-    avatar: "RS",
-    time: "2h ago",
-    content:
-      "Just finished our capstone defense! Three years of blood, sweat and debugging paid off. Shoutout to our adviser Sir Navarro for the guidance 🎓",
-    likes: 47,
-    comments: 12,
-    tag: "General",
-  },
-  {
-    id: 2,
-    userId: "u_maica",
-    avatar: "MV",
-    time: "4h ago",
-    content:
-      "Anyone else struggling with CMSC 142 finals? The automata theory part is killing me. Study group sa lib mamaya around 6pm? 📚",
-    likes: 23,
-    comments: 31,
-    tag: "Academics",
-  },
-  {
-    id: 3,
-    userId: "u_josh",
-    avatar: "JR",
-    time: "5h ago",
-    content: "Hot take: Django > Laravel for our school projects. The ORM alone saves so many headaches. Fight me in the comments.",
-    likes: 61,
-    comments: 44,
-    tag: "Tech",
-  },
-  {
-    id: 4,
-    userId: "u_tricia",
-    avatar: "TL",
-    time: "8h ago",
-    content: "CCS Night 2025 planning committee is looking for volunteers! DM me or drop your name in the comments if you're interested 🎉",
-    likes: 88,
-    comments: 19,
-    tag: "Events",
-  },
-  {
-    id: 5,
-    userId: "u_miguel",
-    avatar: "MS",
-    time: "1d ago",
-    content: "Reminder that the hackathon registration closes TOMORROW. Team slots are almost full — register at the CCS org office now!",
-    likes: 102,
-    comments: 7,
-    tag: "Events",
-  },
-];
-
-const MOCK_USERS = {
-  u_you: {
-    id: "u_you",
-    name: "Juan Dela Cruz",
-    handle: "juandc",
-    status: "Student",
-    program: "BS Computer Science",
-    year: "3rd Year",
-    campus: "Antipolo",
-    focus: "HCI",
-    bio: "Computer science student building expressive UI systems. Interests: UX engineering, realtime graphics, and app polish.",
-    avatarColor: "#9b0028",
-    avatarAccent: "#ff6080",
-  },
-  u_renz: { id: "u_renz", name: "Renz Delos Santos", handle: "renz_ds", status: "Student", program: "BSIT", year: "4th Year", campus: "Antipolo", focus: "Full-stack", bio: "Shipped projects, survived finals, and still here to help the community.", avatarColor: "#9b0028", avatarAccent: "#ff6080" },
-  u_maica: { id: "u_maica", name: "Maica Villanueva", handle: "maica_v", status: "Student", program: "BSCS", year: "3rd Year", campus: "Antipolo", focus: "Theory", bio: "Automata enjoyer. Coffee powered. Ask me about CMSC 142.", avatarColor: "#5a0030", avatarAccent: "#ff3a6e" },
-  u_josh: { id: "u_josh", name: "Josh Reyes", handle: "joshreyes", status: "Student", program: "BSCS", year: "2nd Year", campus: "Antipolo", focus: "Backend", bio: "Opinionated about frameworks and unapologetic about it.", avatarColor: "#3a0014", avatarAccent: "#ffb0bd" },
-  u_tricia: { id: "u_tricia", name: "Tricia Lim", handle: "tricialim", status: "Student", program: "BSIT", year: "3rd Year", campus: "Antipolo", focus: "Community", bio: "If there’s a committee, I’m probably in it.", avatarColor: "#7a0024", avatarAccent: "#ff96a6" },
-  u_miguel: { id: "u_miguel", name: "Miguel Santos", handle: "miguels", status: "Student", program: "BSCS", year: "4th Year", campus: "Antipolo", focus: "Security", bio: "Hackathons, deadlines, and security rabbit holes.", avatarColor: "#5a0030", avatarAccent: "#ff6080" },
-};
-
 const DEFAULT_PROFILE = {
   id: "u_you",
   name: "Juan Dela Cruz",
@@ -184,10 +108,10 @@ const DEFAULT_PROFILE = {
 };
 
 const DEFAULT_STATE = {
-  posts: MOCK_POSTS.map((p) => ({ ...p, userId: p.userId || "u_you", bookmarked: !!p.bookmarked })),
+  posts: [],
   activities: [],
-  friends: { friends: ["u_renz", "u_maica", "u_tricia"], pending: ["u_josh"], outgoing: ["u_miguel"] },
-  subs: { tags: [{ tag: "Academics" }, { tag: "Events" }, { tag: "Tech" }], follows: ["u_renz", "u_tricia"] },
+  friends: { friends: [], pending: [], outgoing: [] },
+  subs: { tags: [{ tag: "Academics" }, { tag: "Events" }, { tag: "Tech" }], follows: [] },
   profile: { ...DEFAULT_PROFILE },
   prefs: { largerText: false, reduceMotion: false, defaultPostTag: "General", roleOverride: "" },
 };
@@ -226,6 +150,22 @@ const STATE = {
   profile: DEFAULT_STATE.profile,
   prefs: DEFAULT_STATE.prefs,
 };
+
+function resolvePublicUser(userId) {
+  const p = STATE.profile;
+  if (userId && p && userId === p.id) return p;
+  return {
+    id: userId || "unknown",
+    name: "Community member",
+    handle: "member",
+    status: "",
+    program: "",
+    year: "",
+    bio: "",
+    avatarColor: "#9b0028",
+    avatarAccent: "#ff6080",
+  };
+}
 
 function hydrateState() {
   STATE.posts = loadJSON(STATE_KEYS.posts, DEFAULT_STATE.posts);
@@ -317,7 +257,7 @@ let miniCloseTimer = null;
 function showMiniProfile(userId, anchorRect) {
   const slot = $('[data-slot="mini-profile"]');
   if (!slot) return;
-  const u = MOCK_USERS[userId] || MOCK_USERS.u_you;
+  const u = resolvePublicUser(userId);
   slot.hidden = false;
 
   // Position: right of anchor when possible, otherwise left.
@@ -1383,7 +1323,7 @@ function requestLoadMore(activeTag) {
 function renderPostCard(post, { readOnly }) {
   const canInteract = !readOnly && getAuthed();
   const wrapper = el("article", { class: "ccs-card", style: "padding: 12px 14px; border-radius: 18px;" });
-  const user = MOCK_USERS[post.userId] || MOCK_USERS.u_you;
+  const user = resolvePublicUser(post.userId);
   wrapper.append(
     el("div", { style: "display:flex; align-items:center; gap: 8px; color: var(--textMuted); font-size: 12px;" }, [
       el("span", { class: "ccs-avatar-dot", "aria-hidden": "true" }),

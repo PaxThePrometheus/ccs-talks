@@ -67,8 +67,6 @@ export function defaultLandingCms() {
       interests: [...FORUM_RAIL.interests],
       trending: [...FORUM_RAIL.trending],
     },
-    /** Suggested badge labels for admin user editor (free text still allowed). */
-    badgeCatalog: ["Dean’s Lister", "Org Member", "Moderator", "Hackathon", "Mentor", "CCS Night"],
     /** Tags shown in the forum composer (must match or extend feed filter chips). */
     postTagOptions: ["General", "Academics", "Tech", "Events"],
   };
@@ -79,10 +77,12 @@ export function mergeLandingCms(stored) {
   if (!stored || typeof stored !== "object") return d;
 
   const frIn = stored.forumRail && typeof stored.forumRail === "object" ? stored.forumRail : {};
+  /** `badgeCatalog` was removed — badge labels for staff assignment live in Site settings → Badge registry. */
+  const { badgeCatalog: _legacyBadgeCatalog, ...storedSansBadges } = stored;
 
   return {
     ...d,
-    ...stored,
+    ...storedSansBadges,
     statLabels: { ...d.statLabels, ...(stored.statLabels && typeof stored.statLabels === "object" ? stored.statLabels : {}) },
     featureCards:
       Array.isArray(stored.featureCards) && stored.featureCards.length > 0 ? stored.featureCards.map((c) => ({ ...c })) : d.featureCards,
@@ -108,10 +108,6 @@ export function mergeLandingCms(stored) {
       interests: Array.isArray(frIn.interests) && frIn.interests.length ? frIn.interests.map(String) : d.forumRail.interests,
       trending: Array.isArray(frIn.trending) && frIn.trending.length ? frIn.trending.map(String) : d.forumRail.trending,
     },
-    badgeCatalog:
-      Array.isArray(stored.badgeCatalog) && stored.badgeCatalog.length > 0
-        ? stored.badgeCatalog.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 40)
-        : d.badgeCatalog,
     postTagOptions:
       Array.isArray(stored.postTagOptions) && stored.postTagOptions.length > 0
         ? stored.postTagOptions.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 24)

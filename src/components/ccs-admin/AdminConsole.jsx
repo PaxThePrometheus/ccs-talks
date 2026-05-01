@@ -750,12 +750,103 @@ function OverviewPane({ onError }) {
 }
 
 /** ---------- users ---------- */
-function BadgesEditor({ userId, badges, catalog, badgeColors, onSave }) {
+function userHasBadgeInsensitive(list, label) {
+  const low = String(label || "").trim().toLowerCase();
+  if (!low) return false;
+  return list.some((x) => String(x || "").trim().toLowerCase() === low);
+}
+
+function findCanonicalBadgeLabel(badgeRegistry, raw) {
+  const t = String(raw || "").trim();
+  if (!t) return null;
+  const low = t.toLowerCase();
+  for (const r of badgeRegistry) {
+    const lb = String(r?.label ?? "").trim();
+    if (lb && lb.toLowerCase() === low) return lb;
+  }
+  return null;
+}
+
+function BadgesEditor({ userId, badges, badgeRegistry, badgeColors, onSave }) {
   const [draft, setDraft] = useState("");
   const list = Array.isArray(badges) ? badges : [];
+  const registry = Array.isArray(badgeRegistry) ? badgeRegistry : [];
   const bpTok = { text: t.text, border: t.border, surfaceAlt: t.surfaceAlt };
+
+  const suggestions = useMemo(
+    () =>
+      [...new Set((Array.isArray(badgeRegistry) ? badgeRegistry : []).map((r) => String(r?.label ?? "").trim()).filter(Boolean))].sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [badgeRegistry],
+  );
+
+  const toAssign = useMemo(() => {
+    const reg = Array.isArray(badgeRegistry) ? badgeRegistry : [];
+    const li = Array.isArray(badges) ? badges : [];
+    return reg.filter((r) => String(r?.label ?? "").trim() && !userHasBadgeInsensitive(li, r.label));
+  }, [badgeRegistry, badges]);
+
+  function tryAdd(raw) {
+    const v = String(raw || "").trim().slice(0, 40);
+    if (!v || list.length >= 8) return false;
+    let label = v;
+    if (registry.length > 0) {
+      const canon = findCanonicalBadgeLabel(registry, v);
+      if (!canon) return false;
+      label = canon.slice(0, 40);
+    }
+    if (userHasBadgeInsensitive(list, label)) return false;
+    onSave([...list, label]);
+    return true;
+  }
+
+  const datalistId = `badge-registry-${userId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0, maxWidth: 420 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0, maxWidth: 560 }}>
+      {registry.length > 0 ? (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+          <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.1em", color: t.muted }}>FROM REGISTRY</span>
+          {toAssign.map((r) => {
+            const lb = String(r.label).trim();
+            const acc = normalizeHexColor(r.color) || badgeAccentForLabel(badgeColors || {}, lb);
+            const pill = badgePillColors(acc, false, bpTok);
+            return (
+              <button
+                key={r.id || lb}
+                type="button"
+                disabled={list.length >= 8}
+                onClick={() => {
+                  if (tryAdd(lb)) setDraft("");
+                }}
+                style={{
+                  cursor: list.length >= 8 ? "not-allowed" : "pointer",
+                  border: `1px solid ${pill.border}`,
+                  background: pill.background,
+                  color: pill.color,
+                  padding: "4px 10px",
+                  fontSize: 12,
+                  fontWeight: 800,
+                  borderRadius: 999,
+                  opacity: list.length >= 8 ? 0.5 : 1,
+                }}
+                title={`Add “${lb}”`}
+              >
+                + {lb}
+              </button>
+            );
+          })}
+          {toAssign.length === 0 ? (
+            <span style={{ fontSize: 11, color: t.muted }}>All registered badges are on this profile.</span>
+          ) : null}
+        </div>
+      ) : (
+        <div style={{ fontSize: 11, color: t.muted, lineHeight: 1.45 }}>
+          No badge registry yet — add badges under <strong>Site settings</strong> first, or type a custom label below (no custom accent until registered).
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {list.map((b) => {
           const acc = badgeAccentForLabel(badgeColors || {}, b);
@@ -782,24 +873,26 @@ function BadgesEditor({ userId, badges, catalog, badgeColors, onSave }) {
           );
         })}
       </div>
+
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        <input list={`badge-cat-${userId}`} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add badge…" style={{ ...inp(160), fontSize: 12 }} />
-        <datalist id={`badge-cat-${userId}`}>
-          {(catalog || []).map((c) => (
-            <option key={c} value={c} />
-          ))}
-        </datalist>
+        <input
+          list={registry.length ? datalistId : undefined}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={registry.length ? "Pick or type registered label…" : "Add badge label…"}
+          style={{ ...inp(220), fontSize: 12, flex: "1 1 160px", minWidth: 0 }}
+        />
+        {registry.length > 0 ? (
+          <datalist id={datalistId}>
+            {suggestions.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        ) : null}
         <button
           type="button"
           onClick={() => {
-            const v = draft.trim().slice(0, 40);
-            if (!v) return;
-            if (list.includes(v) || list.length >= 8) {
-              setDraft("");
-              return;
-            }
-            onSave([...list, v]);
-            setDraft("");
+            if (tryAdd(draft)) setDraft("");
           }}
           style={{ ...btn("ghost"), padding: "6px 10px", fontSize: 12 }}
         >
@@ -918,8 +1011,8 @@ function UsersPane({ viewer, onError, inviteRequired }) {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
-  const [badgeCatalog, setBadgeCatalog] = useState([]);
   const [siteBadgeColors, setSiteBadgeColors] = useState({});
+  const [siteBadgeRegistry, setSiteBadgeRegistry] = useState([]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -943,24 +1036,12 @@ function UsersPane({ viewer, onError, inviteRequired }) {
 
   useEffect(() => {
     let alive = true;
-    void jsonFetch("/api/admin/landing")
-      .then((d) => {
-        if (!alive) return;
-        setBadgeCatalog(Array.isArray(d?.cms?.badgeCatalog) ? d.cms.badgeCatalog : []);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
     void jsonFetch("/api/admin/site")
       .then((d) => {
         if (!alive) return;
         const bc = d?.settings?.badgeColors;
         setSiteBadgeColors(bc && typeof bc === "object" ? bc : {});
+        setSiteBadgeRegistry(Array.isArray(d?.settings?.badgeRegistry) ? d.settings.badgeRegistry : []);
       })
       .catch(() => {});
     return () => {
@@ -1041,7 +1122,7 @@ function UsersPane({ viewer, onError, inviteRequired }) {
                   <BadgesEditor
                     userId={u.id}
                     badges={u.profile?.badges}
-                    catalog={badgeCatalog}
+                    badgeRegistry={siteBadgeRegistry}
                     badgeColors={siteBadgeColors}
                     onSave={(next) => void patchUser(u.id, { badges: next })}
                   />

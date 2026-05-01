@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import * as api from "../api/ccsApi";
 import { DEFAULT_PROFILE, MOCK_POSTS, MOCK_USERS } from "../config/appConfig";
 import { useLocalStorageState } from "./useLocalStorageState";
 import { getThemeTokens } from "../theme";
@@ -50,6 +51,7 @@ const DEFAULT_PREFS = {
 
 export function AppStateProvider({ children }) {
   const [profile, setProfile] = useLocalStorageState("ccs.profile.v1", DEFAULT_PROFILE);
+  const [feedUsersById, setFeedUsersById] = useState({});
   const [page, setPage] = useState("landing");
   const [posts, setPosts] = useLocalStorageState("ccs.posts.v1", MOCK_POSTS);
   const [commentsByPostId, setCommentsByPostId] = useLocalStorageState("ccs.comments.v1", {});
@@ -61,11 +63,96 @@ export function AppStateProvider({ children }) {
   const [reports, setReports] = useLocalStorageState("ccs.reports.v1", []);
   const [bannedUserIds, setBannedUserIds] = useLocalStorageState("ccs.banned.v1", []);
 
-  const signIn = ({ name } = {}) => {
+  const refreshFeed = useCallback(async () => {
+    try {
+      const feed = await api.getPosts();
+      if (Array.isArray(feed.posts)) setPosts(feed.posts);
+      if (feed.users && typeof feed.users === "object") setFeedUsersById((prev) => ({ ...prev, ...feed.users }));
+    } catch {
+      // Keep local cache when offline or server unreachable.
+    }
+  }, [setPosts]);
+
+  const upsertFeedPost = useCallback((next) => {
+    if (!next?.id) return;
+    const idStr = String(next.id);
+    setPosts((ps) => {
+      const i = ps.findIndex((p) => String(p.id) === idStr);
+      if (i === -1) return [{ ...next }, ...ps];
+      const xs = [...ps];
+      xs[i] = { ...xs[i], ...next };
+      return xs;
+    });
+  }, [setPosts]);
+
+  const applySessionProfile = useCallback(({ name, profile: nextProfile }) => {
     setIsAuthed(true);
-    if (name) setProfile((p) => ({ ...p, name }));
+    if (nextProfile) setProfile((p) => ({ ...p, ...nextProfile }));
+    else if (name) setProfile((p) => ({ ...p, name }));
+  }, [setProfile, setIsAuthed]);
+
+  const signIn = ({ name, profile: nextProfile } = {}) => {
+    applySessionProfile({ name, profile: nextProfile });
   };
-  const signOut = () => setIsAuthed(false);
+
+  const signOut = async () => {
+    try {
+      await api.logoutAccount();
+    } catch {
+      /* ignore network errors */
+    }
+    setIsAuthed(false);
+  };
+
+  /** Bootstrap server feed / session cookie when running inside Next.js. */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let cancelled = false;
+
+    async function bootstrap() {
+      try {
+        const feed = await api.getPosts();
+
+        let me = null;
+        try {
+          me = await api.getMe();
+        } catch {
+          me = null;
+        }
+
+        if (cancelled) return;
+
+        if (Array.isArray(feed.posts)) setPosts(feed.posts);
+        if (feed.users && typeof feed.users === "object") setFeedUsersById((prev) => ({ ...prev, ...feed.users }));
+
+        if (me?.profile) {
+          applySessionProfile({ profile: me.profile });
+        }
+      } catch {
+        // Offline / SSR mismatch — defaults + local cache stay authoritative.
+      }
+    }
+
+    void bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setPosts, applySessionProfile]);
+
+  /** Light presence pings while signed in — other clients can subscribe via `/api/presence`. */
+  useEffect(() => {
+    if (!isAuthed) return undefined;
+    if (typeof window === "undefined") return undefined;
+
+    const tick = () => {
+      api.postPresence().catch(() => {});
+    };
+    tick();
+    const id = window.setInterval(tick, 45_000);
+    return () => window.clearInterval(id);
+  }, [isAuthed]);
 
   // Apply mode-specific css vars to <body> so any tailwind/utility falls back nicely
   useEffect(() => {
@@ -78,38 +165,104 @@ export function AppStateProvider({ children }) {
   const users = useMemo(() => {
     return {
       ...MOCK_USERS,
+      ...feedUsersById,
       [profile.id]: profile,
     };
-  }, [profile]);
+  }, [profile, feedUsersById]);
+
+  const mergeFeedUsers = useCallback((incoming) => {
+    if (!incoming || typeof incoming !== "object") return;
+    setFeedUsersById((prev) => ({ ...prev, ...incoming }));
+  }, []);
+
+  const loadCommentsFromServer = useCallback(
+    async (postId) => {
+      try {
+        const data = await api.getComments(postId);
+        mergeFeedUsers(data.users);
+        const key = String(postId);
+        const rows = Array.isArray(data.comments) ? data.comments : [];
+        setCommentsByPostId((m) => ({ ...m, [key]: rows }));
+      } catch {
+        /* ignore */
+      }
+    },
+    [mergeFeedUsers]
+  );
+
+  const publishPost = useCallback(
+    async (content, tag) => {
+      await api.createPost({ content, tag });
+      await refreshFeed();
+    },
+    [refreshFeed]
+  );
 
   const addActivity = (a) => {
     setActivities((xs) => [{ id: `${Date.now()}_${Math.random().toString(16).slice(2)}`, ts: Date.now(), ...a }, ...xs].slice(0, 200));
   };
 
-  const addComment = (postId, { userId, text }) => {
-    setCommentsByPostId((m) => {
-      const prev = m[postId] || [];
-      const next = [...prev, { id: `${Date.now()}_${Math.random().toString(16).slice(2)}`, userId, text, ts: Date.now() }];
-      return { ...m, [postId]: next };
-    });
-    addActivity({ type: "comment", postId, userId });
+  const addComment = async (postId, { userId, text }) => {
+    const key = String(postId);
+    try {
+      const out = await api.postComment(postId, text);
+      mergeFeedUsers(out.users);
+      if (out.post) upsertFeedPost(out.post);
+
+      const row = out.comment;
+      if (row) {
+        setCommentsByPostId((m) => {
+          const prev = m[key] || [];
+          return { ...m, [key]: [...prev.filter((x) => x?.id !== row.id), row] };
+        });
+      }
+
+      addActivity({ type: "comment", postId: key, userId });
+    } catch {
+      setCommentsByPostId((m) => {
+        const prev = m[key] || m[postId] || [];
+        const next = [...prev, { id: `${Date.now()}_${Math.random().toString(16).slice(2)}`, userId, text, ts: Date.now() }];
+        return { ...m, [key]: next };
+      });
+      addActivity({ type: "comment", postId: key, userId });
+    }
   };
 
-  const updatePost = (postId, patch) => {
-    setPosts((ps) => ps.map((p) => (p.id === postId ? { ...p, ...patch } : p)));
-    addActivity({ type: "edit_post", postId, userId: profile.id });
+  const updatePost = async (postId, patch) => {
+    const idStr = String(postId);
+    setPosts((ps) => ps.map((p) => (String(p.id) === idStr ? { ...p, ...patch } : p)));
+    addActivity({ type: "edit_post", postId: idStr, userId: profile.id });
+
+    if (patch?.content != null && isAuthed) {
+      try {
+        const out = await api.patchPost(postId, String(patch.content));
+        if (out?.post) upsertFeedPost(out.post);
+      } catch {
+        /* Moderator edits on other authors' posts are expected to stay local-only for now. */
+      }
+    }
   };
 
-  const toggleBookmark = (postId) => {
-    setPosts((ps) =>
-      ps.map((p) => (p.id === postId ? { ...p, bookmarked: !p.bookmarked } : p))
-    );
-    addActivity({ type: "bookmark", postId, userId: profile.id });
+  const toggleBookmark = async (postId) => {
+    try {
+      const out = await api.togglePostBookmark(postId);
+      if (out?.post) upsertFeedPost(out.post);
+      addActivity({ type: "bookmark", postId, userId: profile.id });
+    } catch {
+      setPosts((ps) => ps.map((p) => (String(p.id) === String(postId) ? { ...p, bookmarked: !p.bookmarked } : p)));
+      addActivity({ type: "bookmark", postId, userId: profile.id });
+    }
   };
 
-  const likePost = (postId) => {
-    setPosts((ps) => ps.map((p) => (p.id === postId ? { ...p, likes: p.likes + 1 } : p)));
-    addActivity({ type: "like", postId, userId: profile.id });
+  const likePost = async (postId) => {
+    try {
+      const out = await api.togglePostLike(postId);
+      if (out?.post) upsertFeedPost(out.post);
+      addActivity({ type: "like", postId, userId: profile.id });
+    } catch {
+      setPosts((ps) => ps.map((p) => (String(p.id) === String(postId) ? { ...p, likes: p.likes + 1 } : p)));
+      addActivity({ type: "like", postId, userId: profile.id });
+    }
   };
 
   const reportPost = (postId, reason = "Reported") => {
@@ -215,6 +368,9 @@ export function AppStateProvider({ children }) {
       updatePost,
       toggleBookmark,
       likePost,
+      refreshFeed,
+      publishPost,
+      loadCommentsFromServer,
       reportPost,
       sharePost,
       activities,
@@ -248,7 +404,24 @@ export function AppStateProvider({ children }) {
       unbanUser,
       bannedUserIds,
     }),
-    [page, profile, users, posts, commentsByPostId, activities, friends, subs, prefs, tokens, isAuthed, reports, bannedUserIds]
+    [
+      page,
+      profile,
+      users,
+      posts,
+      commentsByPostId,
+      activities,
+      friends,
+      subs,
+      prefs,
+      tokens,
+      isAuthed,
+      reports,
+      bannedUserIds,
+      refreshFeed,
+      publishPost,
+      loadCommentsFromServer,
+    ]
   );
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }

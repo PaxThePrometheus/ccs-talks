@@ -1,19 +1,25 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { THEME } from "../theme";
 import { useAppState } from "../state/AppState";
 
 export function PostDetailModal({ open, postId, onClose }) {
-  const { posts, users, commentsByPostId, addComment, updatePost, sharePost, reportPost, profile } = useAppState();
+  const { posts, users, commentsByPostId, addComment, updatePost, sharePost, reportPost, profile, loadCommentsFromServer } = useAppState();
   const [commentText, setCommentText] = useState("");
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
 
-  const post = useMemo(() => posts.find((p) => p.id === postId), [posts, postId]);
+  const post = useMemo(() => posts.find((p) => String(p.id) === String(postId)), [posts, postId]);
   const user = post ? users[post.userId] : null;
   const comments = (postId != null && commentsByPostId[String(postId)]) || commentsByPostId[postId] || [];
   const canEdit = post && post.userId === profile.id;
+
+  useEffect(() => {
+    if (!open || postId == null) return undefined;
+    void loadCommentsFromServer(postId);
+    return undefined;
+  }, [open, postId, loadCommentsFromServer]);
 
   if (!open || !post) return null;
 

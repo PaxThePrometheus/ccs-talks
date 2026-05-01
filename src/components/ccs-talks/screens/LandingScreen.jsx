@@ -103,16 +103,12 @@ export function LandingScreen({ setPage }) {
               {APP_CONFIG.landing.stats.map((s) => (
                 <Stat key={s.k} k={s.k} v={s.v} tokens={tokens} />
               ))}
-              {/* `posts` comes from localStorage so the count differs between
-                  SSR (default mocks) and CSR (saved). Suppress that specific
-                  hydration warning — it's expected and harmless here. */}
-              <Stat k="Posts published" v={String(posts.length)} tokens={tokens} suppressHydration />
+              <Stat k="Posts published" v={String(posts.length)} tokens={tokens} />
             </div>
           </div>
 
-          {/* Right: Live preview card. Posts come from localStorage so we
-              suppress the SSR↔CSR mismatch warning on this dynamic island. */}
-          <div suppressHydrationWarning style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* Right: Live preview card */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.16em", color: tokens.textMuted }}>LIVE · SAMPLE FEED</div>
               <button onClick={() => setPage("forum")} style={{ ...btn(tokens, "ghost"), padding: "6px 10px", fontSize: 12 }}>Peek →</button>
@@ -266,11 +262,11 @@ export function LandingScreen({ setPage }) {
   );
 }
 
-function Stat({ k, v, tokens, suppressHydration }) {
+function Stat({ k, v, tokens }) {
   return (
     <div style={{ borderRadius: 14, border: `1px solid ${tokens.cardBorder}`, background: tokens.cardBg, backdropFilter: "blur(12px)", padding: "10px 14px", minWidth: 140 }}>
       <div style={{ color: tokens.textMuted, fontSize: 12, fontWeight: 700 }}>{k}</div>
-      <div suppressHydrationWarning={!!suppressHydration} style={{ marginTop: 3, fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.3px", fontSize: 22 }}>{v}</div>
+      <div style={{ marginTop: 3, fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.3px", fontSize: 22 }}>{v}</div>
     </div>
   );
 }

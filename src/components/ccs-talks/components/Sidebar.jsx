@@ -178,9 +178,9 @@ export function Sidebar({ setPage, activeKey = "forum", mobileOpen = false, onMo
         cancelLabel="Stay signed in"
         tone="warn"
         onCancel={() => setConfirmSignOut(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           setConfirmSignOut(false);
-          signOut();
+          await signOut();
           setPage("landing");
         }}
       />

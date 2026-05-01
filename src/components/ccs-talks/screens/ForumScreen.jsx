@@ -10,7 +10,7 @@ import { useAppState } from "../state/AppState";
 import { PostDetailModal } from "../ui/PostDetailModal";
 
 export function ForumScreen({ readOnly = false, onSignInPrompt }) {
-  const { users, posts, setPosts, likePost, toggleBookmark, sharePost, reportPost, tokens, prefs, setPage } = useAppState();
+  const { users, posts, likePost, toggleBookmark, sharePost, reportPost, tokens, prefs, setPage, publishPost } = useAppState();
   const isLight = prefs.mode === "light";
   const [draft, setDraft] = useState("");
   const composeRef = useRef(null);
@@ -36,25 +36,18 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
     return () => clearTimeout(id);
   }, [gsapLoaded, prefs.reduceMotion]);
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
     if (readOnly) {
       onSignInPrompt?.();
       return;
     }
     if (!draft.trim()) return;
-    const newPost = {
-      id: Date.now(),
-      userId: "u_you",
-      avatar: "ME",
-      time: "Just now",
-      content: draft,
-      likes: 0,
-      comments: 0,
-      bookmarked: false,
-      tag: prefs.defaultPostTag || "General",
-    };
-    setPosts((ps) => [newPost, ...ps]);
-    setDraft("");
+    try {
+      await publishPost(draft.trim(), prefs.defaultPostTag || "General");
+      setDraft("");
+    } catch {
+      // Network / validation — keep draft so the user doesn’t lose it.
+    }
   };
 
   const handleAuthorEnter = (userId, rect) => {

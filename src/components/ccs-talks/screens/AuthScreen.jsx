@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GSAP_CDN } from "../cdn";
 import { useScript } from "../useScript";
+import * as api from "../api/ccsApi";
 import { useAppState } from "../state/AppState";
 import { APP_CONFIG } from "../config/appConfig";
 
 export function AuthScreen({ mode, setPage }) {
   const gsapLoaded = useScript(GSAP_CDN);
   const cardRef = useRef(null);
-  const { tokens, prefs, signIn } = useAppState();
+  const { tokens, prefs, signIn, refreshFeed } = useAppState();
   const isLight = prefs.mode === "light";
   const isLogin = mode === "login";
 
@@ -63,11 +64,22 @@ export function AuthScreen({ mode, setPage }) {
     const err = validate();
     if (err) { setError(err); return; }
     setSubmitting(true);
-    // Mock auth — pretend network
-    await new Promise((r) => setTimeout(r, 350));
-    signIn(isLogin ? {} : { name: name.trim() });
-    setSubmitting(false);
-    setPage("forum");
+    setError("");
+    try {
+      if (isLogin) {
+        const data = await api.loginAccount({ email, password });
+        signIn({ profile: data.profile });
+      } else {
+        const data = await api.registerAccount({ email, password, name: name.trim() });
+        signIn({ profile: data.profile });
+      }
+      await refreshFeed();
+      setPage("forum");
+    } catch (e) {
+      setError(e.message || "Could not complete sign-in. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (

@@ -20,6 +20,9 @@
 # production
 /build
 
+# local API data (Next.js dev JSON store)
+/data/*.json
+
 # misc
 .DS_Store
 *.pem

@@ -16,7 +16,7 @@ function withAlpha(hex, a) {
 }
 
 export function ProfileScreen() {
-  const { profile, setProfile, posts, users, likePost, toggleBookmark, sharePost, reportPost, setPosts, friends, tokens, prefs } = useAppState();
+  const { profile, setProfile, posts, users, likePost, toggleBookmark, sharePost, reportPost, friends, tokens, prefs, publishPost } = useAppState();
   const isLight = prefs.mode === "light";
   const [isEditing, setIsEditing] = useState(false);
   const [editingAvatar, setEditingAvatar] = useState(false);
@@ -32,7 +32,11 @@ export function ProfileScreen() {
   const bannerAccent = profile.bannerAccent || "#ff3a6e";
 
   const myPosts = useMemo(
-    () => posts.filter((p) => p.userId === profile.id).sort((a, b) => Number(b.id) - Number(a.id)),
+    () =>
+      posts
+        .filter((p) => p.userId === profile.id)
+        .slice()
+        .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)),
     [posts, profile.id]
   );
 
@@ -260,9 +264,14 @@ export function ProfileScreen() {
                         if (e.key === "Enter") {
                           const v = draft.trim();
                           if (!v) return;
-                          const newPost = { id: Date.now(), userId: profile.id, avatar: "ME", time: "Just now", content: v, likes: 0, comments: 0, bookmarked: false, tag: prefs.defaultPostTag || "General" };
-                          setPosts((ps) => [newPost, ...ps]);
-                          setDraft("");
+                          void (async () => {
+                            try {
+                              await publishPost(v, prefs.defaultPostTag || "General");
+                              setDraft("");
+                            } catch {
+                              /* keep draft */
+                            }
+                          })();
                         }
                       }}
                     />
@@ -270,9 +279,14 @@ export function ProfileScreen() {
                       onClick={() => {
                         const v = draft.trim();
                         if (!v) return;
-                        const newPost = { id: Date.now(), userId: profile.id, avatar: "ME", time: "Just now", content: v, likes: 0, comments: 0, bookmarked: false, tag: prefs.defaultPostTag || "General" };
-                        setPosts((ps) => [newPost, ...ps]);
-                        setDraft("");
+                        void (async () => {
+                          try {
+                            await publishPost(v, prefs.defaultPostTag || "General");
+                            setDraft("");
+                          } catch {
+                            /* keep draft */
+                          }
+                        })();
                       }}
                       style={{ border: `1px solid ${tokens.borderStrong}`, background: "linear-gradient(135deg, rgba(255,96,128,0.30), rgba(155,0,40,0.60))", color: "#fff", padding: "10px 12px", borderRadius: 14, cursor: "pointer", fontWeight: 900, fontSize: 13 }}
                     >Post</button>

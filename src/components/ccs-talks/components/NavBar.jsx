@@ -58,7 +58,7 @@ export function NavBar({ setPage, showFull }) {
         </div>
       )}
 
-      <div suppressHydrationWarning style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <button
           onClick={toggleMode}
           title="Toggle theme"

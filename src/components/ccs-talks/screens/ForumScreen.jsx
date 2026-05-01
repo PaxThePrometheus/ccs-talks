@@ -250,6 +250,7 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
                   post={post}
                   user={users[post.userId]}
                   readOnly={readOnly}
+                  onSignInPrompt={onSignInPrompt}
                   onLike={readOnly ? onSignInPrompt : likePost}
                   onBookmark={readOnly ? onSignInPrompt : toggleBookmark}
                   onAuthorEnter={handleAuthorEnter}

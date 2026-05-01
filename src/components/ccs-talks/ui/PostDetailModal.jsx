@@ -101,8 +101,42 @@ export function PostDetailModal({ open, postId, onClose }) {
             flexShrink: 0,
           }}
         >
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <div style={{ width: 36, height: 36, borderRadius: 12, border: "1px solid rgba(255,255,255,0.14)", background: "linear-gradient(135deg, rgba(255,96,128,0.30), rgba(155,0,40,0.60))" }} />
+          <button
+            type="button"
+            aria-label={`View ${user?.name ?? "Author"}'s profile`}
+            onClick={() => {
+              visitUserProfile(post.userId);
+              onClose();
+            }}
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+              minWidth: 0,
+              flex: "0 1 auto",
+              margin: 0,
+              padding: 0,
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              font: "inherit",
+              textAlign: "left",
+              color: "inherit",
+              borderRadius: 12,
+            }}
+          >
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 12,
+                flexShrink: 0,
+                border: "1px solid rgba(255,255,255,0.14)",
+                background: user?.avatarImage
+                  ? `url(${user.avatarImage}) center/cover no-repeat`
+                  : "linear-gradient(135deg, rgba(255,96,128,0.30), rgba(155,0,40,0.60))",
+              }}
+            />
             <div style={{ minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <div style={{ fontWeight: 900, color: "#fff", letterSpacing: "-0.2px", lineHeight: 1.1 }}>{user?.name ?? "Unknown"}</div>
@@ -114,7 +148,7 @@ export function PostDetailModal({ open, postId, onClose }) {
                 </span>
               </div>
             </div>
-          </div>
+          </button>
 
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <button onClick={() => sharePost(post.id)} style={actionBtnStyle()}>

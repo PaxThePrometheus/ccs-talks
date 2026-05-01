@@ -22,6 +22,7 @@ export function PostCard({
   onShare,
   onReport,
   readOnly = false,
+  onSignInPrompt,
 }) {
   const cardRef = useRef(null);
   const [imageViewer, setImageViewer] = useState(null);
@@ -67,6 +68,15 @@ export function PostCard({
   const subtle = isLight ? "rgba(60,0,20,0.40)" : "rgba(240,180,180,0.55)";
   const dividerColor = isLight ? "rgba(60,0,20,0.10)" : "rgba(255,255,255,0.07)";
 
+  const openAuthorProfile = () => {
+    if (!post?.userId) return;
+    if (readOnly) {
+      onSignInPrompt?.();
+      return;
+    }
+    visitUserProfile(post.userId);
+  };
+
   return (
     <div
       ref={cardRef}
@@ -92,58 +102,76 @@ export function PostCard({
       }}
     >
       <div style={{ padding: "1.05rem 1.2rem", display: "flex", alignItems: "flex-start", gap: 12 }}>
-        <div
+        <button
+          type="button"
+          aria-label={readOnly ? `Sign in to view ${displayName}'s profile` : `View ${displayName}'s profile`}
+          onClick={openAuthorProfile}
+          onMouseEnter={(e) => {
+            if (!onAuthorEnter) return;
+            const r = e.currentTarget.getBoundingClientRect();
+            onAuthorEnter(post.userId, r);
+          }}
+          onMouseLeave={() => onAuthorLeave?.()}
           style={{
-            width: 40,
-            height: 40,
-            borderRadius: "50%",
-            background: hasImg
-              ? `url(${user.avatarImage}) center/cover no-repeat`
-              : `linear-gradient(135deg, ${avColor}, ${avAccent})`,
+            flex: 1,
+            minWidth: 0,
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontWeight: 700,
-            fontSize: 13,
-            color: "#ffe4ea",
-            flexShrink: 0,
-            border: `1px solid ${tokens.border}`,
+            alignItems: "flex-start",
+            gap: 12,
+            margin: 0,
+            padding: 0,
+            border: "none",
+            background: "transparent",
+            cursor: "pointer",
+            font: "inherit",
+            textAlign: "left",
+            color: "inherit",
+            borderRadius: 12,
           }}
         >
-          {!hasImg && post.avatar}
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span
-              style={{ fontWeight: 700, fontSize: 14, color: tokens.textStrong, cursor: "default" }}
-              onMouseEnter={(e) => {
-                if (!onAuthorEnter) return;
-                const r = e.currentTarget.getBoundingClientRect();
-                onAuthorEnter(post.userId, r);
-              }}
-              onMouseLeave={() => onAuthorLeave?.()}
-            >
-              {displayName}
-            </span>
-            <UserStatusBadgeRow user={user} tokens={tokens} isLight={isLight} dense gap={6} />
-            <span style={{ color: subtle, fontSize: 13 }}>@{handle}</span>
-            <span style={{ color: subtle, fontSize: 12, marginLeft: "auto" }}>{post.time}</span>
-          </div>
-          <span
+          <div
             style={{
-              background: tagColor[post.tag] || (isLight ? "#e9d4dd" : "#503040"),
-              color: tagText,
-              fontSize: 11,
-              padding: "2px 8px",
-              borderRadius: 20,
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              background: hasImg
+                ? `url(${user.avatarImage}) center/cover no-repeat`
+                : `linear-gradient(135deg, ${avColor}, ${avAccent})`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
               fontWeight: 700,
-              marginTop: 2,
-              display: "inline-block",
+              fontSize: 13,
+              color: "#ffe4ea",
+              flexShrink: 0,
+              border: `1px solid ${tokens.border}`,
             }}
           >
-            {post.tag}
-          </span>
-        </div>
+            {!hasImg && post.avatar}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontWeight: 700, fontSize: 14, color: tokens.textStrong }}>{displayName}</span>
+              <UserStatusBadgeRow user={user} tokens={tokens} isLight={isLight} dense gap={6} />
+              <span style={{ color: subtle, fontSize: 13 }}>@{handle}</span>
+            </div>
+            <span
+              style={{
+                background: tagColor[post.tag] || (isLight ? "#e9d4dd" : "#503040"),
+                color: tagText,
+                fontSize: 11,
+                padding: "2px 8px",
+                borderRadius: 20,
+                fontWeight: 700,
+                marginTop: 2,
+                display: "inline-block",
+              }}
+            >
+              {post.tag}
+            </span>
+          </div>
+        </button>
+        <span style={{ color: subtle, fontSize: 12, flexShrink: 0, lineHeight: "40px" }}>{post.time}</span>
       </div>
 
       <div style={{ height: 1, background: dividerColor }} />

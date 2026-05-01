@@ -9,7 +9,6 @@ import { ProfileEditModal } from "../ui/ProfileEditModal";
 import { AvatarBannerModal } from "../ui/AvatarBannerModal";
 import { AccountCenterModal } from "../ui/AccountCenterModal";
 import { PostCard } from "../components/PostCard";
-import { PostDetailModal } from "../ui/PostDetailModal";
 import { FeedComposer } from "../ui/FeedComposer";
 
 function withAlpha(hex, a) {
@@ -46,13 +45,14 @@ export function ProfileScreen() {
     badgeColors,
     isAuthed,
     setPage,
+    profileNotFoundHandle,
+    openPost,
   } = useAppState();
   const isLight = prefs.mode === "light";
   const [isEditing, setIsEditing] = useState(false);
   const [editingAvatar, setEditingAvatar] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [tab, setTab] = useState("posts"); // posts | about | friends | photos
-  const [activePostId, setActivePostId] = useState(null);
   const [draft, setDraft] = useState("");
   const [composeTag, setComposeTag] = useState(() => prefs.defaultPostTag || "General");
   const [composeImage, setComposeImage] = useState("");
@@ -97,6 +97,55 @@ export function ProfileScreen() {
             .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)),
     [posts, displayUser]
   );
+
+  if (profileNotFoundHandle) {
+    const shell = {
+      position: "fixed",
+      top: 0,
+      left: "var(--ccs-shell-left)",
+      right: 0,
+      bottom: 0,
+      overflowY: "auto",
+      overflowX: "hidden",
+      padding: "1.75rem var(--ccs-shell-pad-x) 2.5rem",
+      borderLeft: `1px solid ${tokens.divider}`,
+      color: tokens.text,
+    };
+    return (
+      <div className="ccs-scroll" style={shell}>
+        <div style={{ maxWidth: 480, margin: "10vh auto", textAlign: "center" }}>
+          <div style={{ fontSize: 44, lineHeight: 1 }}>🔎</div>
+          <div style={{ fontWeight: 950, color: tokens.textStrong, marginTop: 16, fontSize: 22 }}>User not found</div>
+          <div style={{ marginTop: 10, color: tokens.textMuted, fontSize: 15, lineHeight: 1.55 }}>
+            No account matches{" "}
+            <span style={{ color: tokens.textStrong, fontWeight: 800 }}>@{profileNotFoundHandle}</span>.
+          </div>
+          <div style={{ marginTop: 22, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => {
+                resetProfileVisit();
+                setPage("forum");
+              }}
+              style={headerBtn(undefined, tokens)}
+            >
+              Back to forum
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                resetProfileVisit();
+                setPage("search");
+              }}
+              style={headerBtn(undefined, tokens)}
+            >
+              Search users
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (visitInFlight) {
     const shell = {
@@ -529,7 +578,7 @@ export function ProfileScreen() {
                       onBookmark={toggleBookmark}
                       onShare={sharePost}
                       onReport={(id) => reportPost(id, "Reported from profile")}
-                      onOpenComments={(id) => setActivePostId(id)}
+                      onOpenComments={(id) => openPost(id)}
                     />
                   ))}
                   {myPosts.length === 0 && <div style={{ color: tokens.textMuted, fontSize: 13 }}>No posts yet.</div>}
@@ -673,7 +722,6 @@ export function ProfileScreen() {
         }}
       />
       <AccountCenterModal open={accountOpen} onCancel={() => setAccountOpen(false)} />
-      {!isGuestPeek ? <PostDetailModal open={activePostId != null} postId={activePostId} onClose={() => setActivePostId(null)} /> : null}
     </div>
   );
 }

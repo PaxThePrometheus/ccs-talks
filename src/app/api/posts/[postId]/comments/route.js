@@ -29,14 +29,16 @@ export async function POST(request, ctx) {
 
   const text = String(body.text || "").trim();
   const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl : "";
+  const parentId = typeof body.parentId === "string" ? body.parentId.trim() : "";
   if (!text) return NextResponse.json({ error: "Comment text is empty." }, { status: 400 });
 
   const viewer = await resolveViewerFromSession(token);
   if (!viewer) return NextResponse.json({ error: "Sign in to comment." }, { status: 401 });
 
-  const out = await addCommentEnvelope(postId, viewer.id, text, imageUrl);
+  const out = await addCommentEnvelope(postId, viewer.id, text, imageUrl, parentId || null);
 
   if (out?.missing) return NextResponse.json({ error: "Post not found." }, { status: 404 });
+  if (out?.missingParent) return NextResponse.json({ error: "Reply target not found." }, { status: 400 });
   if (out?.imageTooLarge) {
     return NextResponse.json({ error: "Attached image is too large or invalid." }, { status: 413 });
   }

@@ -232,7 +232,7 @@ export function PostCard({
           <Icon name="comment" size={15} /> {post.comments}
         </ActionBtn>
         <Sep color={dividerColor} />
-        <ActionBtn disabled={readOnly} onClick={() => !readOnly && onShare?.(post.id)} muted={muted}>
+        <ActionBtn onClick={() => onShare?.(post.id)} muted={muted}>
           <Icon name="share" size={15} /> Share
         </ActionBtn>
         <ActionBtn disabled={readOnly} onClick={() => !readOnly && onReport?.(post.id)} muted={subtle}>

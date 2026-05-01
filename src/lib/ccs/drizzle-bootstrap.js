@@ -40,6 +40,8 @@ export function ddlFragments() {
     )`,
     `CREATE INDEX IF NOT EXISTS ccs_posts_created_idx ON ccs_posts (created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS ccs_comments_post_idx ON ccs_comments (post_id)`,
+    `ALTER TABLE ccs_comments ADD COLUMN IF NOT EXISTS parent_id text`,
+    `CREATE INDEX IF NOT EXISTS ccs_comments_parent_idx ON ccs_comments (parent_id)`,
     `CREATE INDEX IF NOT EXISTS ccs_sessions_expires_idx ON ccs_sessions (expires_at)`,
     `ALTER TABLE ccs_users ADD COLUMN IF NOT EXISTS prefs jsonb NOT NULL DEFAULT '{}'::jsonb`,
     `ALTER TABLE ccs_users ADD COLUMN IF NOT EXISTS friends_state jsonb NOT NULL DEFAULT '{"friends":[],"pending":[],"outgoing":[]}'::jsonb`,

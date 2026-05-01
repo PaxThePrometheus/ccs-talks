@@ -304,6 +304,24 @@ export async function clientPostPreview(viewerUserId, postId) {
   return cards[0] ?? null;
 }
 
+/** Single post + author (and viewer when signed in) for deep links `/p/{id}`. */
+export async function fetchSinglePostEnvelope(viewerUserId, postId) {
+  const db = await getDb();
+  const [row] = await db.select().from(schema.ccsPosts).where(eq(schema.ccsPosts.id, postId)).limit(1);
+  if (!row) return null;
+  const legacy = postRowToLegacy(row);
+  const cards = await hydrateClientPosts(db, viewerUserId, [legacy]);
+  const post = cards[0];
+  if (!post) return null;
+  const ids = [post.userId];
+  if (viewerUserId) ids.push(viewerUserId);
+  const uniq = [...new Set(ids.filter(Boolean))];
+  const userRows = uniq.length === 0 ? [] : await db.select().from(schema.ccsUsers).where(inArray(schema.ccsUsers.id, uniq));
+  const shimUsers = userRows.map(userRowToShim);
+  const users = authorProfilesByIds({ users: shimUsers, posts: [legacy] }, uniq);
+  return { post, users };
+}
+
 export async function createUserPost(viewerUserId, content, tag, imageUrl = "") {
   const db = await getDb();
   let clampedImage = "";
@@ -403,16 +421,26 @@ export async function listCommentsEnvelope(postId) {
       text: c.body,
       ts: c.createdAt,
       imageUrl: c.imageUrl || "",
+      parentId: c.parentId && String(c.parentId).trim() ? String(c.parentId).trim() : null,
     })),
     users,
   };
 }
 
-export async function addCommentEnvelope(postId, viewerUserId, text, imageUrl = "") {
+export async function addCommentEnvelope(postId, viewerUserId, text, imageUrl = "", parentIdRaw = null) {
   const db = await getDb();
 
   const [postRow] = await db.select().from(schema.ccsPosts).where(eq(schema.ccsPosts.id, postId)).limit(1);
   if (!postRow) return { missing: true };
+
+  let resolvedParentId = null;
+  const rawParent = typeof parentIdRaw === "string" ? parentIdRaw.trim() : "";
+  if (rawParent) {
+    const [parentRow] = await db.select().from(schema.ccsComments).where(eq(schema.ccsComments.id, rawParent)).limit(1);
+    if (!parentRow || parentRow.postId !== postId) return { missingParent: true };
+    const pPid = parentRow.parentId && String(parentRow.parentId).trim();
+    resolvedParentId = pPid || parentRow.id;
+  }
 
   let clampedImage = "";
   try {
@@ -428,6 +456,7 @@ export async function addCommentEnvelope(postId, viewerUserId, text, imageUrl = 
     id,
     postId,
     userId: viewerUserId,
+    parentId: resolvedParentId,
     body: text,
     imageUrl: clampedImage,
     createdAt,
@@ -449,7 +478,7 @@ export async function addCommentEnvelope(postId, viewerUserId, text, imageUrl = 
   const users = authorProfilesByIds({ users: shimUsers, posts: [] }, ids);
 
   return {
-    comment: { id, userId: viewerUserId, text, ts: createdAt, imageUrl: clampedImage },
+    comment: { id, userId: viewerUserId, text, ts: createdAt, imageUrl: clampedImage, parentId: resolvedParentId },
     post: postCard,
     users,
   };

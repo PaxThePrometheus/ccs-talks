@@ -1,9 +1,22 @@
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
-import { resolveViewerFromSession, updatePostBody } from "@/lib/ccs/store";
+import { fetchSinglePostEnvelope, resolveViewerFromSession, updatePostBody } from "@/lib/ccs/store";
 
 export const dynamic = "force-dynamic";
+
+export async function GET(_request, ctx) {
+  await ensureReady();
+  const { postId } = await ctx.params;
+  const token = await readSessionTokenFromCookies();
+  const viewer = await resolveViewerFromSession(token);
+  const viewerId = viewer?.id || null;
+
+  const env = await fetchSinglePostEnvelope(viewerId, postId);
+  if (!env) return NextResponse.json({ error: "Post not found." }, { status: 404 });
+
+  return NextResponse.json({ post: env.post, users: env.users });
+}
 
 export async function PATCH(request, ctx) {
   await ensureReady();

@@ -58,6 +58,8 @@ export const ccsComments = pgTable("ccs_comments", {
   id: text("id").primaryKey(),
   postId: text("post_id").notNull(),
   userId: text("user_id").notNull(),
+  /** Top-level comment id when this row is a direct reply (single-level threads). */
+  parentId: text("parent_id"),
   body: text("body").notNull(),
   imageUrl: text("image_url").notNull().default(""),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),

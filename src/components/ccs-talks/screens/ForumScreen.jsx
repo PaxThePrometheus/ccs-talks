@@ -8,11 +8,10 @@ import { useScript } from "../useScript";
 import { PostCard } from "../components/PostCard";
 import { MiniProfilePreview } from "../ui/MiniProfilePreview";
 import { useAppState } from "../state/AppState";
-import { PostDetailModal } from "../ui/PostDetailModal";
 import { FeedComposer } from "../ui/FeedComposer";
 
 export function ForumScreen({ readOnly = false, onSignInPrompt }) {
-  const { users, posts, likePost, toggleBookmark, sharePost, reportPost, tokens, prefs, setPage, publishPost, applyLandingExtras, badgeColors } = useAppState();
+  const { users, posts, likePost, toggleBookmark, sharePost, reportPost, tokens, prefs, setPage, publishPost, applyLandingExtras, badgeColors, openPost } = useAppState();
   const isLight = prefs.mode === "light";
   const [forumRail, setForumRail] = useState(() => defaultLandingCms().forumRail);
   const [postTagOptions, setPostTagOptions] = useState(() => defaultLandingCms().postTagOptions);
@@ -26,7 +25,6 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
   const [caughtUp, setCaughtUp] = useState(false);
   const [preview, setPreview] = useState(null);
   const closeTimerRef = useRef(null);
-  const [activePostId, setActivePostId] = useState(null);
   const [activeTag, setActiveTag] = useState("All");
 
   /** Forum rail copy is CMS-driven; poll so admin edits converge without redeploying. */
@@ -254,7 +252,7 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
                   onBookmark={readOnly ? onSignInPrompt : toggleBookmark}
                   onAuthorEnter={handleAuthorEnter}
                   onAuthorLeave={handleAuthorLeave}
-                  onOpenComments={(id) => setActivePostId(id)}
+                  onOpenComments={(id) => openPost(id)}
                   onShare={readOnly ? onSignInPrompt : sharePost}
                   onReport={readOnly ? onSignInPrompt : (id) => reportPost(id, "Reported from feed")}
                 />
@@ -394,7 +392,6 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
         onRequestClose={() => setPreview(null)}
       />
 
-      {!readOnly && <PostDetailModal open={activePostId != null} postId={activePostId} onClose={() => setActivePostId(null)} />}
     </>
   );
 }

@@ -23,12 +23,13 @@ import { AnnouncementsScreen } from "./screens/AnnouncementsScreen";
 import { TicketsScreen } from "./screens/TicketsScreen";
 import { FriendsScreen } from "./screens/FriendsScreen";
 import { SubscriptionsScreen } from "./screens/SubscriptionsScreen";
+import { PostDetailScreen } from "./screens/PostDetailScreen";
 import { OnboardingModal } from "./ui/OnboardingModal";
 import { AppStateProvider, useAppState } from "./state/AppState";
 import { TalksRouterSync } from "./routing/TalksRouterSync";
 
 function CCSTalksAppInner() {
-  const { page, setPage, prefs, tokens, isAuthed, profileVisitUserId } = useAppState();
+  const { page, setPage, prefs, tokens, isAuthed, profileVisitUserId, profileNotFoundHandle } = useAppState();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { isLowPower } = useLowPower();
   /** Animated WebGL/canvas backgrounds + maximal glass polish off — keeps layout/colors intact. */
@@ -43,16 +44,30 @@ function CCSTalksAppInner() {
   const isSettings = page === "settings";
   const isAnnouncements = page === "announcements";
   const isTickets = page === "tickets";
+  const isPost = page === "post";
   const isLanding = page === "landing" || page === "about";
   const isAuth = page === "login" || page === "register" || page === "forgot-password" || page === "reset-password";
   // Forum is the only page that can be browsed without auth (read-only preview).
   // Everything else (profile/bookmarks/friends/etc) requires sign in.
-  const guestAllowed = ["landing", "about", "login", "register", "forgot-password", "reset-password", "forum", "search", "announcements", "tickets"];
+  const guestAllowed = [
+    "landing",
+    "about",
+    "login",
+    "register",
+    "forgot-password",
+    "reset-password",
+    "forum",
+    "post",
+    "search",
+    "announcements",
+    "tickets",
+  ];
   /** Signed-out users aren't forced to login on /profile route; peek flow uses `profileVisitUserId`. */
   const guestOnProfileRoute = !isAuthed && page === "profile";
   const requiresAuth = !isAuthed && !guestAllowed.includes(page) && !guestOnProfileRoute;
   const hasSidebarShell = [
     "forum",
+    "post",
     "announcements",
     "tickets",
     "profile",
@@ -71,8 +86,9 @@ function CCSTalksAppInner() {
 
   useEffect(() => {
     if (isAuthed || page !== "profile") return;
+    if (profileNotFoundHandle) return;
     if (!String(profileVisitUserId || "").trim()) setPage("forum");
-  }, [isAuthed, page, profileVisitUserId, setPage]);
+  }, [isAuthed, page, profileVisitUserId, profileNotFoundHandle, setPage]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -154,14 +170,15 @@ function CCSTalksAppInner() {
             />
             <Sidebar
               setPage={setPage}
-              activeKey={page}
+              activeKey={isPost ? "forum" : page}
               mobileOpen={sidebarOpen}
               onMobileClose={() => setSidebarOpen(false)}
             />
             {isForum && <ForumScreen readOnly={!isAuthed} onSignInPrompt={() => setPage("login")} />}
+            {isPost && <PostDetailScreen readOnly={!isAuthed} onSignInPrompt={() => setPage("login")} />}
             {isAnnouncements && <AnnouncementsScreen />}
             {isTickets && <TicketsScreen onNeedSignIn={() => setPage("login")} />}
-            {isProfile && (isAuthed || String(profileVisitUserId || "").trim()) && <ProfileScreen />}
+            {isProfile && (isAuthed || String(profileVisitUserId || "").trim() || profileNotFoundHandle) && <ProfileScreen />}
             {isSearch && <SearchScreen />}
             {isActivities && isAuthed && <ActivitiesScreen />}
             {isBookmarks && isAuthed && <BookmarksScreen />}

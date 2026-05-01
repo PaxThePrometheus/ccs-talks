@@ -5,7 +5,7 @@ import { useAppState } from "../state/AppState";
 import { PostCard } from "../components/PostCard";
 
 export function BookmarksScreen() {
-  const { posts, users, likePost, toggleBookmark, sharePost, reportPost, tokens } = useAppState();
+  const { posts, users, likePost, toggleBookmark, sharePost, reportPost, tokens, openPost } = useAppState();
   const bookmarked = posts.filter((p) => p.bookmarked);
 
   return (
@@ -35,6 +35,7 @@ export function BookmarksScreen() {
               user={users[post.userId]}
               onLike={likePost}
               onBookmark={toggleBookmark}
+              onOpenComments={(id) => openPost(id)}
               onShare={sharePost}
               onReport={(id) => reportPost(id, "Reported from bookmarks")}
             />

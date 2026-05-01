@@ -21,10 +21,13 @@ export function TalksRouterSync() {
     resetProfileVisit,
     fetchAndMergeVisitByHandle,
     setProfileVisitUserId,
+    setProfileNotFoundHandle,
     profileVisitUserId,
     profile,
     users,
+    activePostId,
     talksPathnameHydration,
+    hydratePostFromServer,
   } = useAppState();
 
   // URL → React state (initial load, back/forward, external links).
@@ -43,19 +46,33 @@ export function TalksRouterSync() {
     try {
       const parsed = parseTalksPathname(pathname);
 
+      if (parsed.page === "post" && parsed.postId) {
+        hydrateCompletesAsync = true;
+        resetProfileVisit();
+        void hydratePostFromServer(parsed.postId).finally(() => {
+          endHydration();
+        });
+        return;
+      }
+
       if (parsed.page === "profile" && parsed.profileHandle) {
         hydrateCompletesAsync = true;
         void fetchAndMergeVisitByHandle(parsed.profileHandle)
           .then((bundle) => {
             if (!bundle?.profile?.id) {
-              router.replace("/" + searchSuffix, { scroll: false });
+              resetProfileVisit();
+              setProfileNotFoundHandle(String(parsed.profileHandle || "").trim());
+              setPage("profile");
               return;
             }
+            setProfileNotFoundHandle(null);
             setProfileVisitUserId(String(bundle.profile.id));
             setPage("profile");
           })
           .catch(() => {
-            router.replace("/" + searchSuffix, { scroll: false });
+            resetProfileVisit();
+            setProfileNotFoundHandle(String(parsed.profileHandle || "").trim());
+            setPage("profile");
           })
           .finally(() => {
             endHydration();
@@ -74,14 +91,24 @@ export function TalksRouterSync() {
     } finally {
       if (!hydrateCompletesAsync) endHydration();
     }
-  }, [pathname, fetchAndMergeVisitByHandle, resetProfileVisit, router, setPage, setProfileVisitUserId, talksPathnameHydration]);
+  }, [
+    pathname,
+    fetchAndMergeVisitByHandle,
+    hydratePostFromServer,
+    resetProfileVisit,
+    router,
+    setPage,
+    setProfileVisitUserId,
+    setProfileNotFoundHandle,
+    talksPathnameHydration,
+  ]);
 
   // React state → URL after in-app navigations (`setPage` from sidebar etc.).
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (talksPathnameHydration.shouldDeferTalksPush()) return;
 
-    const built = buildTalksPathname({ page, profileVisitUserId, profile, users });
+    const built = buildTalksPathname({ page, profileVisitUserId, profile, users, activePostId });
     if (built == null) return;
 
     const curPath = normalizeTalksPathname(window.location.pathname);
@@ -94,7 +121,7 @@ export function TalksRouterSync() {
 
     lastPushedFullRef.current = nextFull;
     router.replace(nextFull, { scroll: false });
-  }, [pathname, page, profileVisitUserId, profile, users, router, talksPathnameHydration]);
+  }, [pathname, page, profileVisitUserId, profile, users, activePostId, router, talksPathnameHydration]);
 
   // `#profile@x` / `#forum` legacy links → real paths once.
   useEffect(() => {
@@ -103,6 +130,15 @@ export function TalksRouterSync() {
     const migrateHash = () => {
       const raw = window.location.hash.replace(/^#/, "").trim();
       if (!raw) return;
+
+      const postHash = /^post-(.+)$/i.exec(raw);
+      if (postHash) {
+        const pid = postHash[1].trim();
+        if (!pid) return;
+        const baseSearch = typeof window.location.search === "string" ? window.location.search : "";
+        router.replace(`/p/${encodeURIComponent(pid)}${baseSearch}`, { scroll: false });
+        return;
+      }
 
       const profileMatch = /^profile@(.+)$/i.exec(raw);
       if (profileMatch) {

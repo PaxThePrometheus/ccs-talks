@@ -41,6 +41,12 @@ export function AppStateProvider({ children }) {
   const [usernameCooldownUntil, setUsernameCooldownUntil] = useState(null);
   /** Badge label → hex map from `/api/landing` (Forum poll keeps it fresh). */
   const [badgeColors, setBadgeColors] = useState({});
+  /** Deep-link post screen (`/p/{id}`). */
+  const [activePostId, setActivePostId] = useState(null);
+  /** When set, post detail shows “not found” for this id (URL stays `/p/…`). */
+  const [postNotFoundId, setPostNotFoundId] = useState(null);
+  /** When set, profile screen shows “user not found” for this handle. */
+  const [profileNotFoundHandle, setProfileNotFoundHandle] = useState(null);
 
   const applyLandingExtras = useCallback((d) => {
     if (d?.badgeColors && typeof d.badgeColors === "object") setBadgeColors(d.badgeColors);
@@ -238,6 +244,16 @@ export function AppStateProvider({ children }) {
     }
   }, [page]);
 
+  const prevPageRef = useRef(page);
+  useEffect(() => {
+    const prev = prevPageRef.current;
+    prevPageRef.current = page;
+    if (prev === "post" && page !== "post") {
+      setActivePostId(null);
+      setPostNotFoundId(null);
+    }
+  }, [page]);
+
   const users = useMemo(() => {
     const r = role || "student";
     return {
@@ -316,6 +332,7 @@ export function AppStateProvider({ children }) {
     (userId) => {
       if (!userId) return;
       const id = String(userId);
+      setProfileNotFoundHandle(null);
       setProfileVisitUserId(id);
       setVisitedProfileFriends(null);
       setPage("profile");
@@ -333,20 +350,52 @@ export function AppStateProvider({ children }) {
   const resetProfileVisit = useCallback(() => {
     setProfileVisitUserId(null);
     setVisitedProfileFriends(null);
+    setProfileNotFoundHandle(null);
     if (typeof window !== "undefined" && /^#profile@/i.test(window.location.hash)) {
       const path = `${window.location.pathname}${window.location.search || ""}`;
       window.history.replaceState(null, "", path);
     }
   }, []);
 
+  const openPost = useCallback((postId) => {
+    const id = String(postId || "").trim();
+    if (!id) return;
+    setPostNotFoundId(null);
+    setActivePostId(id);
+    setPage("post");
+  }, [setPage]);
+
+  const hydratePostFromServer = useCallback(
+    async (postId) => {
+      const id = String(postId || "").trim();
+      if (!id) return;
+      setActivePostId(id);
+      setPostNotFoundId(null);
+      setPage("post");
+      try {
+        const data = await api.getPost(id);
+        if (data?.post) {
+          mergeFeedUsers(data.users);
+          upsertFeedPost(data.post);
+          setPostNotFoundId(null);
+        } else {
+          setPostNotFoundId(id);
+        }
+      } catch {
+        setPostNotFoundId(id);
+      }
+    },
+    [mergeFeedUsers, upsertFeedPost, setPage]
+  );
+
   const addActivity = (a) => {
     setActivities((xs) => [{ id: `${Date.now()}_${Math.random().toString(16).slice(2)}`, ts: Date.now(), ...a }, ...xs].slice(0, 200));
   };
 
-  const addComment = async (postId, { userId, text, imageUrl = "" }) => {
+  const addComment = async (postId, { userId, text, imageUrl = "", parentId = null }) => {
     const key = String(postId);
     try {
-      const out = await api.postComment(postId, text, imageUrl);
+      const out = await api.postComment(postId, text, imageUrl, parentId);
       mergeFeedUsers(out.users);
       if (out.post) upsertFeedPost(out.post);
 
@@ -362,7 +411,16 @@ export function AppStateProvider({ children }) {
     } catch {
       setCommentsByPostId((m) => {
         const prev = m[key] || m[postId] || [];
-        const next = [...prev, { id: `${Date.now()}_${Math.random().toString(16).slice(2)}`, userId, text, ts: Date.now() }];
+        const next = [
+          ...prev,
+          {
+            id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+            userId,
+            text,
+            ts: Date.now(),
+            parentId: parentId && String(parentId).trim() ? String(parentId).trim() : null,
+          },
+        ];
         return { ...m, [key]: next };
       });
       addActivity({ type: "comment", postId: key, userId });
@@ -435,13 +493,26 @@ export function AppStateProvider({ children }) {
   };
 
   const sharePost = async (postId) => {
-    const url = typeof window !== "undefined" ? `${window.location.origin}/#post-${postId}` : `post-${postId}`;
+    const id = encodeURIComponent(String(postId || "").trim());
+    const url = typeof window !== "undefined" && id ? `${window.location.origin}/p/${id}` : "";
     try {
-      await navigator.clipboard.writeText(url);
+      if (url) await navigator.clipboard.writeText(url);
     } catch {
       // ignore
     }
     addActivity({ type: "share", postId, userId: profile.id });
+  };
+
+  const shareComment = async (postId, commentId) => {
+    const p = encodeURIComponent(String(postId || "").trim());
+    const c = encodeURIComponent(String(commentId || "").trim());
+    const url = typeof window !== "undefined" && p && c ? `${window.location.origin}/p/${p}#c-${c}` : "";
+    try {
+      if (url) await navigator.clipboard.writeText(url);
+    } catch {
+      // ignore
+    }
+    addActivity({ type: "share_comment", postId: String(postId), commentId: String(commentId), userId: profile.id });
   };
 
   // -------- Friends --------
@@ -519,6 +590,8 @@ export function AppStateProvider({ children }) {
       profileVisitUserId,
       fetchAndMergeVisitByHandle,
       setProfileVisitUserId,
+      profileNotFoundHandle,
+      setProfileNotFoundHandle,
       talksPathnameHydration,
       visitedProfileFriends,
       visitUserProfile,
@@ -539,6 +612,12 @@ export function AppStateProvider({ children }) {
       loadCommentsFromServer,
       reportPost,
       sharePost,
+      shareComment,
+      activePostId,
+      setActivePostId,
+      postNotFoundId,
+      openPost,
+      hydratePostFromServer,
       activities,
       // friends
       friends,
@@ -582,6 +661,7 @@ export function AppStateProvider({ children }) {
       page,
       profileVisitUserId,
       fetchAndMergeVisitByHandle,
+      profileNotFoundHandle,
       talksPathnameHydration,
       visitedProfileFriends,
       visitUserProfile,
@@ -605,6 +685,11 @@ export function AppStateProvider({ children }) {
       refreshFeed,
       publishPost,
       loadCommentsFromServer,
+      shareComment,
+      activePostId,
+      postNotFoundId,
+      openPost,
+      hydratePostFromServer,
       hydrateAccountFromServer,
       persistFullProfile,
       badgeColors,

@@ -147,14 +147,20 @@ export function togglePostBookmark(postId) {
   return jsonFetch(`/api/posts/${encodeURIComponent(postId)}/bookmark`, { method: "POST", body: JSON.stringify({}) });
 }
 
+export function getPost(postId) {
+  return jsonFetch(`/api/posts/${encodeURIComponent(postId)}`, { method: "GET" });
+}
+
 export function getComments(postId) {
   return jsonFetch(`/api/posts/${encodeURIComponent(postId)}/comments`, { method: "GET" });
 }
 
-export function postComment(postId, text, imageUrl) {
+export function postComment(postId, text, imageUrl, parentId) {
+  const body = { text, imageUrl: imageUrl || "" };
+  if (parentId && String(parentId).trim()) body.parentId = String(parentId).trim();
   return jsonFetch(`/api/posts/${encodeURIComponent(postId)}/comments`, {
     method: "POST",
-    body: JSON.stringify({ text, imageUrl: imageUrl || "" }),
+    body: JSON.stringify(body),
   });
 }
 

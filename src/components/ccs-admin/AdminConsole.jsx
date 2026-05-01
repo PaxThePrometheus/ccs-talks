@@ -19,6 +19,24 @@ const SECTIONS = [
   { key: "site", icon: "🛠", label: "Site settings" },
 ];
 
+/** Sidebar becomes a drawer at this width — matches typical tablet portrait / phones. */
+const ADMIN_NAV_MAX_WIDTH = 920;
+/** Drawer starts below sticky top bar (approx. padded single-line bar). */
+const ADMIN_MOBILE_TOPBAR_PX = 56;
+
+function useAdminNarrowNav() {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mq = window.matchMedia(`(max-width: ${ADMIN_NAV_MAX_WIDTH}px)`);
+    const sync = () => setNarrow(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return narrow;
+}
+
 async function jsonFetch(url, opts = {}) {
   const res = await fetch(url, {
     credentials: "include",
@@ -70,6 +88,60 @@ function staffProfileSnapshot(pr) {
 export function AdminConsole({ viewer, inviteRequired }) {
   const [section, setSection] = useState("overview");
   const [error, setError] = useState("");
+  const isNarrow = useAdminNarrowNav();
+  const [navOpen, setNavOpen] = useState(false);
+
+  const selectSection = useCallback((key) => {
+    setSection(key);
+    if (isNarrow) setNavOpen(false);
+  }, [isNarrow]);
+
+  useEffect(() => {
+    if (!isNarrow) setNavOpen(false);
+  }, [isNarrow]);
+
+  useEffect(() => {
+    if (!isNarrow || !navOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") setNavOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isNarrow, navOpen]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const shell = document.querySelector(".ccs-admin-shell");
+    if (!shell || !isNarrow) return undefined;
+    shell.style.overflow = navOpen ? "hidden" : "";
+    return () => {
+      shell.style.overflow = "";
+    };
+  }, [isNarrow, navOpen]);
+
+  const narrowAsideStyle = useMemo(() => {
+    if (!isNarrow) return null;
+    return {
+      borderRight: `1px solid ${t.border}`,
+      background: "rgba(14,3,10,0.96)",
+      display: "flex",
+      flexDirection: "column",
+      position: "fixed",
+      left: 0,
+      top: ADMIN_MOBILE_TOPBAR_PX,
+      bottom: 0,
+      width: "min(280px, calc(100vw - 36px))",
+      maxWidth: "88vw",
+      transform: navOpen ? "translateX(0)" : "translateX(-108%)",
+      transition: "transform 0.22s ease-out",
+      zIndex: 95,
+      overflowY: "auto",
+      WebkitOverflowScrolling: "touch",
+      paddingBottom: "max(14px, env(safe-area-inset-bottom, 0px))",
+      boxShadow: navOpen ? "8px 0 36px rgba(0,0,0,0.50)" : "none",
+      boxSizing: "border-box",
+    };
+  }, [isNarrow, navOpen]);
 
   const handleErr = useCallback((e) => {
     if (e?.status === 401) {
@@ -86,18 +158,51 @@ export function AdminConsole({ viewer, inviteRequired }) {
     window.location.href = "/admin/login";
   }
 
+  const title = SECTIONS.find((s) => s.key === section)?.label || "";
+  const contentPad = isNarrow ? "1rem max(1rem, env(safe-area-inset-left, 0px)) calc(1.75rem + env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-right, 0px))" : "1.25rem 1.75rem 2.5rem";
+
+  const shellWrapper = {
+    position: "relative",
+    width: "100%",
+    minHeight: "100%",
+    display: "flex",
+    flexDirection: isNarrow ? "column" : "row",
+  };
+
   return (
-    <div style={shell}>
-      <Sidebar viewer={viewer} section={section} setSection={setSection} signOut={signOut} />
-      <main style={mainCol}>
-        <Topbar viewer={viewer} title={SECTIONS.find((s) => s.key === section)?.label || ""} />
+    <div style={shellWrapper}>
+      {isNarrow && navOpen && (
+        <div
+          aria-hidden
+          onClick={() => setNavOpen(false)}
+          style={{
+            position: "fixed",
+            left: 0,
+            right: 0,
+            top: ADMIN_MOBILE_TOPBAR_PX,
+            bottom: 0,
+            zIndex: 90,
+            background: "rgba(0,0,0,0.52)",
+            touchAction: "none",
+          }}
+        />
+      )}
+
+      {!isNarrow && <Sidebar viewer={viewer} section={section} selectSection={selectSection} signOut={signOut} asideStyle={asideCol} />}
+      <main style={{ flex: "1 1 auto", ...mainCol, width: isNarrow ? "100%" : undefined, minHeight: "min-content" }}>
+        <Topbar
+          title={title}
+          isNarrow={isNarrow}
+          navOpen={navOpen}
+          onToggleNav={() => setNavOpen((v) => !v)}
+        />
         {error && (
-          <div style={errorBanner} role="alert">
-            <span>{error}</span>
-            <button onClick={() => setError("")} style={{ ...btn("ghost"), padding: "4px 8px" }}>Dismiss</button>
+          <div style={{ ...errorBanner, margin: isNarrow ? "12px max(1rem, env(safe-area-inset-left, 12px)) 0 max(1rem, env(safe-area-inset-right, 12px))" : "12px 1.75rem 0", flexWrap: "wrap", rowGap: 8 }} role="alert">
+            <span style={{ flex: "1 1 200px" }}>{error}</span>
+            <button onClick={() => setError("")} style={{ ...btn("ghost"), padding: "4px 8px", flexShrink: 0 }}>Dismiss</button>
           </div>
         )}
-        <div style={{ padding: "1.25rem 1.75rem 2.5rem", display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ padding: contentPad, display: "flex", flexDirection: "column", gap: 14, overflowX: isNarrow ? "auto" : undefined }}>
           {section === "overview" && <OverviewPane onError={handleErr} />}
           {section === "landing" && <AdminLandingPane onError={handleErr} />}
           {section === "users" && <UsersPane viewer={viewer} onError={handleErr} inviteRequired={inviteRequired} />}
@@ -108,21 +213,24 @@ export function AdminConsole({ viewer, inviteRequired }) {
           {section === "site" && <SitePane viewer={viewer} onError={handleErr} />}
         </div>
       </main>
+      {isNarrow && narrowAsideStyle && (
+        <Sidebar viewer={viewer} section={section} selectSection={selectSection} signOut={signOut} asideStyle={narrowAsideStyle} />
+      )}
     </div>
   );
 }
 
 /** ---------- shell ---------- */
-function Sidebar({ viewer, section, setSection, signOut }) {
+function Sidebar({ viewer, section, selectSection, signOut, asideStyle }) {
   return (
-    <aside style={asideCol}>
-      <div style={{ padding: "20px 18px 12px" }}>
+    <aside id="ccs-admin-drawer-nav" style={asideStyle}>
+      <div style={{ padding: "20px 18px 12px", paddingLeft: "max(18px, env(safe-area-inset-left, 0px))" }}>
         <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.22em", color: t.muted }}>CCS TALKS</div>
         <div style={{ fontSize: 18, fontWeight: 950, letterSpacing: "-0.4px", color: t.textStrong, marginTop: 2 }}>Admin Console</div>
       </div>
-      <nav style={{ display: "flex", flexDirection: "column", gap: 4, padding: "0 12px" }}>
+      <nav style={{ display: "flex", flexDirection: "column", gap: 4, padding: "0 12px", paddingBottom: 8 }}>
         {SECTIONS.map((s) => (
-          <button key={s.key} onClick={() => setSection(s.key)} style={navItem(section === s.key)}>
+          <button key={s.key} type="button" onClick={() => selectSection(s.key)} style={navItem(section === s.key)}>
             <span style={{ width: 18, textAlign: "center" }}>{s.icon}</span> {s.label}
           </button>
         ))}
@@ -144,12 +252,33 @@ function Sidebar({ viewer, section, setSection, signOut }) {
   );
 }
 
-function Topbar({ title }) {
+function Topbar({ title, isNarrow, navOpen, onToggleNav }) {
+  const merged = {
+    ...topbar,
+    ...(isNarrow
+      ? {
+          zIndex: 100,
+          paddingTop: "max(12px, env(safe-area-inset-top, 0px))",
+          paddingLeft: "max(14px, env(safe-area-inset-left, 0px))",
+          paddingRight: "max(14px, env(safe-area-inset-right, 0px))",
+          gap: 10,
+        }
+      : {}),
+  };
+
   return (
-    <div style={topbar}>
-      <div style={{ fontWeight: 950, color: t.textStrong, letterSpacing: "-0.2px", fontSize: 16 }}>{title}</div>
-      <div style={{ fontSize: 12, color: t.muted }}>operations console</div>
-    </div>
+    <header style={merged}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 auto", minWidth: 0 }}>
+        {isNarrow && (
+          <button type="button" aria-expanded={navOpen} aria-controls="ccs-admin-drawer-nav" aria-label={navOpen ? "Close navigation" : "Open navigation"} onClick={onToggleNav} style={{ ...btn("ghost"), flexShrink: 0, padding: "6px 10px", fontSize: 20, lineHeight: 1 }}>
+            {navOpen ? "✕" : "☰"}
+          </button>
+        )}
+        <span style={{ fontWeight: 950, letterSpacing: "-0.2px", fontSize: isNarrow ? 15 : 16, color: t.textStrong, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+      </div>
+      {!isNarrow && <span style={{ fontSize: 12, color: t.muted }}>operations console</span>}
+      {isNarrow && <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: t.muted, flexShrink: 0 }}>ops</span>}
+    </header>
   );
 }
 
@@ -1893,10 +2022,33 @@ function Skeleton() {
 }
 
 /** ---------- styles ---------- */
-const shell = { display: "grid", gridTemplateColumns: "260px 1fr", minHeight: "100vh" };
-const asideCol = { borderRight: `1px solid ${t.border}`, background: "rgba(15,0,8,0.65)", display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh" };
+const asideCol = {
+  flex: "0 0 260px",
+  width: 260,
+  borderRight: `1px solid ${t.border}`,
+  background: "rgba(15,0,8,0.65)",
+  display: "flex",
+  flexDirection: "column",
+  alignSelf: "stretch",
+  position: "sticky",
+  top: 0,
+  minHeight: "100vh",
+};
 const mainCol = { minWidth: 0 };
-const topbar = { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1rem 1.75rem", borderBottom: `1px solid ${t.border}`, background: "rgba(20,0,10,0.50)", backdropFilter: "blur(10px)", position: "sticky", top: 0, zIndex: 5 };
+const topbar = {
+  boxSizing: "border-box",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  padding: "1rem 1.75rem",
+  minHeight: ADMIN_MOBILE_TOPBAR_PX,
+  borderBottom: `1px solid ${t.border}`,
+  background: "rgba(20,0,10,0.72)",
+  backdropFilter: "blur(10px)",
+  position: "sticky",
+  top: 0,
+  zIndex: 5,
+};
 const errorBanner = { margin: "12px 1.75rem 0", padding: "10px 14px", border: "1px solid rgba(255,80,100,0.40)", background: "rgba(255,80,100,0.10)", color: "#ffb1c1", borderRadius: 12, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 };
 const statGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 };
 const code = { background: "rgba(255,255,255,0.06)", border: `1px solid ${t.border}`, padding: "1px 6px", borderRadius: 6, fontSize: 11, fontFamily: "var(--font-geist-mono, monospace)" };

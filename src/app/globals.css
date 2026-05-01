@@ -69,6 +69,12 @@ body {
   background: linear-gradient(180deg, rgba(154, 128, 255, 0.45), rgba(92, 234, 230, 0.5));
 }
 
+@media (max-width: 920px) {
+  .ccs-admin-shell {
+    padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
+  }
+}
+
 /* (overlay removed) */
 
 @keyframes ccsShimmer {

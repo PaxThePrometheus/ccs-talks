@@ -85,7 +85,7 @@ export function AdminRegisterForm({ bootstrap = false, inviteRequired = false })
           {submitting ? "Registering…" : bootstrap ? "Create administrator account" : "Register administrator"}
         </button>
 
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14, gap: 10, fontSize: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", marginTop: 14, gap: 10, fontSize: 12 }}>
           <a href="/admin/login" style={link}>Already have an admin account?</a>
           <a href="/" style={{ ...link, color: t.muted }}>← Back to forum</a>
         </div>

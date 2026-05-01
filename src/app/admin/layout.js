@@ -3,6 +3,12 @@ export const metadata = {
   description: "Operational console for CCS Talks moderators and administrators.",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
+
 export default function AdminLayout({ children }) {
   return (
     <div

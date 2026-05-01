@@ -22,7 +22,7 @@ export const page = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  padding: "2rem 1rem",
+  padding: "max(2rem, env(safe-area-inset-top, 0px)) max(1rem, env(safe-area-inset-right, 12px)) max(2rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 12px))",
   background: "radial-gradient(circle at 25% 18%, rgba(155,0,40,0.40), transparent 55%), radial-gradient(circle at 78% 82%, rgba(60,0,30,0.55), transparent 55%), #0a0006",
 };
 

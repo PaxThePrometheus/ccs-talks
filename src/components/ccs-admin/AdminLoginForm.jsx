@@ -55,7 +55,7 @@ export function AdminLoginForm() {
           {submitting ? "Signing in…" : "Sign in"}
         </button>
 
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14, gap: 10, fontSize: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", marginTop: 14, gap: 10, fontSize: 12 }}>
           <a href="/admin/register" style={link}>Need an admin account?</a>
           <a href="/" style={{ ...link, color: t.muted }}>← Back to forum</a>
         </div>

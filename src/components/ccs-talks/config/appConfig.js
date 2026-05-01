@@ -107,6 +107,6 @@ export const DEFAULT_PROFILE = {
 export const FORUM_RAIL = {
   rising: ["CCS Days 2026 hype thread", "Best IDE for Java?", "We love Ma'am MJ<3"],
   interests: ["Best professor of 2026?", "PCDL 111 reviewer shared", "Internship openings thread"],
-  trending: ["#CCSDays", "#ThesisSeason", "#CodeAndCoffee"],
+  trending: ["#CCSDays2026", "#ThesisSeason", "#CodeAndCoffee"],
 };
 

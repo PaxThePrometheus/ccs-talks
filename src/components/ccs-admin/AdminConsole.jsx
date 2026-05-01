@@ -1571,7 +1571,7 @@ function BadgeRegistryEditor({ registry, disabled, onSave }) {
   }
 
   return (
-    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10, maxWidth: 720 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", minWidth: 0 }}>
       {draft.map((row, idx) => (
         <div
           key={row.id || `idx_${idx}`}
@@ -1724,10 +1724,12 @@ function SitePane({ viewer, onError }) {
           />
         </div>
 
-        <div style={row}>
-          <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>Badge registry</div>
-          <div style={{ color: t.muted, fontSize: 12, marginTop: 4, maxWidth: 760, lineHeight: 1.5 }}>
-            Each row is one forum badge label and its accent colour. Matching profile badge text uses the same logic as before (exact, then case-insensitive). Visible on profiles and hover cards after landing data refreshes.
+        <div style={{ ...row, flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start", gap: 12 }}>
+          <div style={{ flex: "0 0 auto", minWidth: 0, width: "100%" }}>
+            <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>Badge registry</div>
+            <div style={{ color: t.muted, fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
+              Each row is one forum badge label and its accent colour. Matching profile badge text uses the same logic as before (exact, then case-insensitive). Visible on profiles and hover cards after landing data refreshes.
+            </div>
           </div>
           <BadgeRegistryEditor
             key={JSON.stringify(settings.badgeRegistry || [])}
@@ -1737,42 +1739,44 @@ function SitePane({ viewer, onError }) {
           />
         </div>
 
-        <div style={row}>
-          <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>Profile field dropdowns</div>
-          <div style={{ color: t.muted, fontSize: 12, marginTop: 4, marginBottom: 12, maxWidth: 760 }}>
-            One value per line — used in the forum profile editor (each field stays left-aligned inside this column). Stored in <code style={code}>profileFieldOptions</code>.
+        <div style={{ ...row, flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start", gap: 12 }}>
+          <div style={{ flex: "0 0 auto", minWidth: 0, width: "100%" }}>
+            <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>Profile field dropdowns</div>
+            <div style={{ color: t.muted, fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
+              One value per line — used in the forum profile editor. Stored in <code style={code}>profileFieldOptions</code>.
+            </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "12px 0 16px", maxWidth: 720 }}>
-            {PROFILE_OPTION_FIELDS.map(([fieldKey, title]) => (
-              <div key={fieldKey} style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", minWidth: 0 }}>
-                <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>{title}</div>
-                <textarea
-                  key={(settings.profileFieldOptions?.[fieldKey] || []).join("\n")}
-                  disabled={!isAdmin}
-                  defaultValue={(settings.profileFieldOptions?.[fieldKey] || []).join("\n")}
-                  onBlur={(e) => {
-                    const list = e.target.value
-                      .split(/[\n]+/)
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                      .slice(0, 96);
-                    save({ profileFieldOptions: { [fieldKey]: list } });
-                  }}
-                  spellCheck={false}
-                  placeholder={"BS Computer Science\nBS Information Technology"}
-                  style={{
-                    ...inp(undefined),
-                    width: "100%",
-                    maxWidth: "100%",
-                    boxSizing: "border-box",
-                    height: 96,
-                    resize: "vertical",
-                    fontFamily: "var(--font-geist-mono, monospace)",
-                  }}
-                />
-              </div>
-            ))}
-          </div>
+          {PROFILE_OPTION_FIELDS.map(([fieldKey, title]) => (
+            <div key={fieldKey} style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%", minWidth: 0 }}>
+              <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>{title}</div>
+              <textarea
+                key={(settings.profileFieldOptions?.[fieldKey] || []).join("\n")}
+                disabled={!isAdmin}
+                defaultValue={(settings.profileFieldOptions?.[fieldKey] || []).join("\n")}
+                onBlur={(e) => {
+                  const list = e.target.value
+                    .split(/[\n]+/)
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                    .slice(0, 96);
+                  save({ profileFieldOptions: { [fieldKey]: list } });
+                }}
+                spellCheck={false}
+                placeholder={"BS Computer Science\nBS Information Technology"}
+                style={{
+                  ...inp(undefined),
+                  width: "100%",
+                  minWidth: 0,
+                  maxWidth: "100%",
+                  boxSizing: "border-box",
+                  minHeight: 88,
+                  resize: "vertical",
+                  fontFamily: "var(--font-geist-mono, monospace)",
+                  fontSize: 12,
+                }}
+              />
+            </div>
+          ))}
         </div>
 
         {saving && <div style={{ padding: "8px 16px", fontSize: 12, color: t.muted }}>Saving…</div>}

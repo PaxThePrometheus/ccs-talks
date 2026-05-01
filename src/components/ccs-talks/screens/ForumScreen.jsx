@@ -11,8 +11,39 @@ import { MiniProfilePreview } from "../ui/MiniProfilePreview";
 import { useAppState } from "../state/AppState";
 import { FeedComposer } from "../ui/FeedComposer";
 
+function passesReportVisibility(post, prefs, bypass) {
+  if (bypass) return true;
+  const thresh = Number(prefs.hideReportedAfter);
+  const c = Number(post?.openReportCount ?? 0);
+  return !Number.isFinite(thresh) || c < thresh;
+}
+
 export function ForumScreen({ readOnly = false, onSignInPrompt }) {
-  const { users, posts, likePost, toggleBookmark, sharePost, reportPost, tokens, prefs, setPage, publishPost, applyLandingExtras, badgeColors, openPost } = useAppState();
+  const {
+    users,
+    posts,
+    profile,
+    likePost,
+    toggleBookmark,
+    sharePost,
+    reportPost,
+    tokens,
+    prefs,
+    isStaff,
+    setPage,
+    publishPost,
+    applyLandingExtras,
+    badgeColors,
+    openPost,
+    reloadForumFeed,
+    loadMoreFeedPosts,
+    feedNextCursor,
+    onlineByUserId,
+    openForumSearchWith,
+    pinPost,
+    deletePost,
+    banUser,
+  } = useAppState();
   const isLight = prefs.mode === "light";
   const [forumRail, setForumRail] = useState(() => defaultLandingCms().forumRail);
   const [postTagOptions, setPostTagOptions] = useState(() => defaultLandingCms().postTagOptions);
@@ -32,6 +63,7 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
   useEffect(() => {
     let alive = true;
     const poll = async () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       try {
         const d = await api.getLanding();
         if (!alive) return;
@@ -45,18 +77,29 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
         if (Array.isArray(d?.cms?.postTagOptions) && d.cms.postTagOptions.length) {
           setPostTagOptions(d.cms.postTagOptions.map(String));
         }
-        if (d.badgeColors && typeof d.badgeColors === "object") applyLandingExtras(d);
+        applyLandingExtras(d);
       } catch {
         /* keep last good rail */
       }
     };
     void poll();
     const id = window.setInterval(() => void poll(), 15_000);
+    const onVis = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") void poll();
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       alive = false;
       window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, [applyLandingExtras]);
+
+  useEffect(() => {
+    setCaughtUp(false);
+    setLoadingMore(false);
+    void reloadForumFeed(activeTag);
+  }, [activeTag, reloadForumFeed]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !composeRef.current) return undefined;
@@ -89,6 +132,14 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
     }
   };
 
+  const visiblePostsForTag = useMemo(
+    () =>
+      posts.filter(
+        (p) => (activeTag === "All" || p.tag === activeTag) && passesReportVisibility(p, prefs, isStaff),
+      ),
+    [posts, activeTag, prefs, isStaff],
+  );
+
   const filterTags = useMemo(() => ["All", ...postTagOptions], [postTagOptions]);
 
   const handleAuthorEnter = (userId, rect) => {
@@ -119,11 +170,16 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
     if (!el || loadingMore || caughtUp) return;
     const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 40;
     if (!nearBottom) return;
-    setLoadingMore(true);
-    window.setTimeout(() => {
-      setLoadingMore(false);
+    if (!feedNextCursor) {
       setCaughtUp(true);
-    }, 900);
+      return;
+    }
+    setLoadingMore(true);
+    void (async () => {
+      const r = await loadMoreFeedPosts();
+      setLoadingMore(false);
+      if (!r.ok || !r.hasMore) setCaughtUp(true);
+    })();
   };
 
   const Panel = ({ title, children }) => (
@@ -244,24 +300,44 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            {posts
-              .filter((p) => activeTag === "All" || p.tag === activeTag)
-              .slice(0, readOnly ? 3 : posts.length) // limited preview
-              .map((post) => (
-                <PostCard
-                  key={post.id}
-                  post={post}
-                  user={users[post.userId]}
-                  readOnly={readOnly}
-                  onLike={readOnly ? onSignInPrompt : likePost}
-                  onBookmark={readOnly ? onSignInPrompt : toggleBookmark}
-                  onAuthorEnter={handleAuthorEnter}
-                  onAuthorLeave={handleAuthorLeave}
-                  onOpenComments={(id) => openPost(id)}
-                  onShare={readOnly ? onSignInPrompt : sharePost}
-                  onReport={readOnly ? onSignInPrompt : (id) => reportPost(id, "Reported from feed")}
-                />
-              ))}
+            {visiblePostsForTag.map((post) => (
+              <PostCard
+                key={post.id}
+                post={post}
+                user={users[post.userId]}
+                readOnly={readOnly}
+                isOnline={!!onlineByUserId[post.userId]}
+                onLike={readOnly ? onSignInPrompt : likePost}
+                onBookmark={readOnly ? onSignInPrompt : toggleBookmark}
+                onAuthorEnter={handleAuthorEnter}
+                onAuthorLeave={handleAuthorLeave}
+                onOpenComments={(id) => openPost(id)}
+                onShare={readOnly ? onSignInPrompt : sharePost}
+                onReport={readOnly ? onSignInPrompt : (id) => void reportPost(id, "Reported from feed")}
+                staffModeration={
+                  isStaff && !readOnly
+                    ? {
+                        pinned: !!post.pinned,
+                        onTogglePin: () => void pinPost(post.id),
+                        onDeletePost: () => {
+                          if (typeof window !== "undefined" && !window.confirm("Delete this post for everyone?"))
+                            return;
+                          void deletePost(post.id);
+                        },
+                        onBanAuthor:
+                          post.userId &&
+                          profile?.id &&
+                          String(post.userId) !== String(profile.id)
+                            ? () => {
+                                if (typeof window !== "undefined" && !window.confirm("Ban this author?")) return;
+                                void banUser(post.userId);
+                              }
+                            : undefined,
+                      }
+                    : undefined
+                }
+              />
+            ))}
           </div>
 
           {readOnly && (
@@ -276,8 +352,8 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
                 textAlign: "center",
               }}
             >
-              <div style={{ fontWeight: 900, color: tokens.textStrong }}>Want to see the rest?</div>
-              <div style={{ color: tokens.textMuted, fontSize: 13, marginTop: 4 }}>Sign in to view {posts.length - 3}+ more threads, comments, and join the conversation.</div>
+              <div style={{ fontWeight: 900, color: tokens.textStrong }}>Join the conversation</div>
+              <div style={{ color: tokens.textMuted, fontSize: 13, marginTop: 4 }}>Sign in to post, like, bookmark, and comment.</div>
               <div style={{ marginTop: 10, display: "inline-flex", gap: 8 }}>
                 <button onClick={() => setPage("login")} style={btn(tokens, "solid")}>Sign in</button>
                 <button onClick={() => setPage("register")} style={btn(tokens, "ghost")}>Create account</button>
@@ -292,12 +368,12 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <Panel title="Rising Threads">
                 {forumRail.rising.map((t, i) => (
-                  <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
+                  <PanelRow key={i} onClick={() => openForumSearchWith(t, "")}>{t}</PanelRow>
                 ))}
               </Panel>
               <Panel title="Trending">
                 {forumRail.trending.map((t, i) => (
-                  <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
+                  <PanelRow key={i} onClick={() => openForumSearchWith(t, "")}>{t}</PanelRow>
                 ))}
               </Panel>
               <button onClick={() => setPage("search")} style={{ ...btn(tokens, "ghost") }}>
@@ -306,7 +382,7 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
             </div>
           </div>
 
-          {!readOnly && (loadingMore || caughtUp) && (
+          {(loadingMore || caughtUp) && (
             <div style={{ marginTop: "1.25rem" }}>
               {loadingMore && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -367,17 +443,22 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
           <div style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
             <Panel title="Rising Threads">
               {forumRail.rising.map((t, i) => (
-                <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
+                <PanelRow key={i} onClick={() => openForumSearchWith(t, "")}>{t}</PanelRow>
               ))}
             </Panel>
             <Panel title="From your interests">
               {forumRail.interests.map((t, i) => (
-                <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
+                <PanelRow
+                  key={i}
+                  onClick={() => openForumSearchWith(t, postTagOptions.includes(t) ? t : "")}
+                >
+                  {t}
+                </PanelRow>
               ))}
             </Panel>
             <Panel title="Trending">
               {forumRail.trending.map((t, i) => (
-                <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
+                <PanelRow key={i} onClick={() => openForumSearchWith(t, "")}>{t}</PanelRow>
               ))}
             </Panel>
             <button onClick={() => setPage("search")} style={{ ...btn(tokens, "ghost"), marginTop: 4 }}>

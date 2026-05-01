@@ -11,6 +11,12 @@ import { buildHandleDirectory } from "./MentionBody";
 import { SignatureFooter } from "./SignatureFooter";
 import { ForumImageLightbox } from "../ui/ForumImageLightbox";
 import { UserStatusBadgeRow } from "../ui/UserStatusBadgeRow";
+import { badgeAccentForLabel, badgePillColors } from "@/lib/ccs/badgeColors";
+
+/**
+ * Staff-only moderation affordances (`/api/admin/*`, same cookie as moderator).
+ * @typedef {{ pinned?: boolean; onTogglePin?: () => void | Promise<void>; onDeletePost?: () => void | Promise<void>; onBanAuthor?: () => void | Promise<void> }} StaffModerationOpts
+ */
 
 export function PostCard({
   post,
@@ -22,12 +28,16 @@ export function PostCard({
   onOpenComments,
   onShare,
   onReport,
+  /** @type {StaffModerationOpts | undefined} */
+  staffModeration,
   readOnly = false,
+  isOnline = false,
 }) {
   const cardRef = useRef(null);
   const [imageViewer, setImageViewer] = useState(null);
   const gsapLoaded = useScript(GSAP_CDN, { expectGlobal: "gsap" });
-  const { tokens, prefs, users, visitUserProfile } = useAppState();
+  const { tokens, prefs, users, visitUserProfile, tagColors } = useAppState();
+  const [staffMenuOpen, setStaffMenuOpen] = useState(false);
   const isLight = prefs.mode === "light";
   const calmMotion = !!(prefs.reduceMotion || prefs.reduceEffects);
   const liftHover = !(prefs.reduceMotion || prefs.reduceEffects);
@@ -54,10 +64,8 @@ export function PostCard({
     return () => clearTimeout(id);
   }, [gsapLoaded, post.id, calmMotion]);
 
-  const tagColor = isLight
-    ? { General: "#e9d4dd", Academics: "#d6e0f0", Tech: "#d4ece3", Events: "#f0d6d6" }
-    : { General: "#7a4060", Academics: "#405080", Tech: "#205040", Events: "#7a2020" };
-  const tagText = isLight ? "#3a0014" : "rgba(255,220,220,0.9)";
+  const tagAccent = badgeAccentForLabel(tagColors || {}, post.tag);
+  const tagPill = badgePillColors(tagAccent, isLight, tokens);
   const displayName = user?.name ?? "Unknown";
   const handle = user?.handle ?? "unknown";
   const avColor = user?.avatarColor || (isLight ? "#c0002a" : "#9b0028");
@@ -155,8 +163,9 @@ export function PostCard({
             </div>
             <span
               style={{
-                background: tagColor[post.tag] || (isLight ? "#e9d4dd" : "#503040"),
-                color: tagText,
+                background: tagPill.background,
+                color: tagPill.color,
+                border: `1px solid ${tagPill.border}`,
                 fontSize: 11,
                 padding: "2px 8px",
                 borderRadius: 20,
@@ -268,7 +277,13 @@ export function PostCard({
 
       <div style={{ height: 1, background: dividerColor }} />
 
-      <div style={{ padding: "0.65rem 0.85rem", display: "flex", gap: 10, alignItems: "center" }}>
+      <div
+        style={{ padding: "0.65rem 0.85rem", display: "flex", gap: 10, alignItems: "center", position: "relative" }}
+        onClick={(e) => {
+          /** Don’t propagate into post body expand / overlay handlers. */
+          e.stopPropagation();
+        }}
+      >
         <ActionBtn disabled={readOnly} onClick={() => !readOnly && onLike?.(post.id)} muted={muted} hover="#ff6080">
           <Icon name="heart" size={15} /> {post.likes}
         </ActionBtn>
@@ -283,6 +298,83 @@ export function PostCard({
         <ActionBtn disabled={readOnly} onClick={() => !readOnly && onReport?.(post.id)} muted={subtle}>
           <Icon name="flag" size={15} /> Report
         </ActionBtn>
+
+        {staffModeration?.onTogglePin || staffModeration?.onDeletePost || staffModeration?.onBanAuthor ? (
+          <div style={{ position: "relative" }}>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setStaffMenuOpen((v) => !v);
+              }}
+              style={{
+                background: readOnly ? "transparent" : isLight ? "rgba(180,120,140,0.12)" : "rgba(255,96,128,0.14)",
+                border: `1px solid ${dividerColor}`,
+                color: muted,
+                cursor: readOnly ? "not-allowed" : "pointer",
+                borderRadius: 10,
+                padding: "6px 10px",
+                fontSize: 11,
+                fontWeight: 800,
+              }}
+              title="Staff moderation"
+              disabled={readOnly}
+            >
+              Shield
+            </button>
+            {staffMenuOpen && !readOnly && (
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: "100%",
+                  left: 0,
+                  marginBottom: 8,
+                  minWidth: 160,
+                  borderRadius: 12,
+                  border: `1px solid ${tokens.borderStrong}`,
+                  background: tokens.cardBg,
+                  boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+                  overflow: "hidden",
+                  zIndex: 40,
+                }}
+              >
+                {staffModeration.onTogglePin ? (
+                  <StaffMenuBtn
+                    label={staffModeration.pinned ? "Unpin" : "Pin"}
+                    tokens={tokens}
+                    onClick={() => {
+                      setStaffMenuOpen(false);
+                      void staffModeration.onTogglePin?.();
+                    }}
+                  />
+                ) : null}
+                {staffModeration.onDeletePost ? (
+                  <StaffMenuBtn
+                    label="Delete post"
+                    tokens={tokens}
+                    danger
+                    onClick={() => {
+                      setStaffMenuOpen(false);
+                      void staffModeration.onDeletePost?.();
+                    }}
+                  />
+                ) : null}
+                {staffModeration.onBanAuthor ? (
+                  <StaffMenuBtn
+                    label="Ban author"
+                    tokens={tokens}
+                    danger
+                    onClick={() => {
+                      setStaffMenuOpen(false);
+                      void staffModeration.onBanAuthor?.();
+                    }}
+                  />
+                ) : null}
+              </div>
+            )}
+          </div>
+        ) : null}
+
         <button
           disabled={readOnly}
           onClick={() => !readOnly && onBookmark?.(post.id)}
@@ -355,4 +447,31 @@ function ActionBtn({ children, onClick, disabled, muted, hover }) {
 
 function Sep({ color }) {
   return <div style={{ width: 1, height: 18, background: color }} />;
+}
+
+function StaffMenuBtn({ label, onClick, tokens, danger }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.();
+      }}
+      style={{
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        border: "none",
+        margin: 0,
+        cursor: "pointer",
+        padding: "10px 12px",
+        fontSize: 12,
+        fontWeight: 800,
+        background: tokens.surfaceAlt,
+        color: danger ? "#ff6b8f" : tokens.text,
+      }}
+    >
+      {label}
+    </button>
+  );
 }

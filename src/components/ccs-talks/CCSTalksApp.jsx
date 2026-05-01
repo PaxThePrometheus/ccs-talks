@@ -27,6 +27,7 @@ import { PostDetailScreen } from "./screens/PostDetailScreen";
 import { OnboardingModal } from "./ui/OnboardingModal";
 import { AppStateProvider, useAppState } from "./state/AppState";
 import { TalksRouterSync } from "./routing/TalksRouterSync";
+import { ToastHost } from "./ui/ToastHost";
 
 function CCSTalksAppInner() {
   const { page, setPage, prefs, tokens, isAuthed, profileVisitUserId, profileNotFoundHandle } = useAppState();
@@ -211,6 +212,7 @@ function CCSTalksAppInner() {
 export default function CCSTalksApp() {
   return (
     <AppStateProvider>
+      <ToastHost />
       <TalksRouterSync />
       <CCSTalksAppInner />
     </AppStateProvider>

@@ -53,6 +53,8 @@ export function getVisitProfileByHandle(handle) {
 export function getPosts(query = {}) {
   const qs = new URLSearchParams();
   if (query.tag) qs.set("tag", query.tag);
+  if (query.cursor) qs.set("cursor", query.cursor);
+  if (query.limit != null && query.limit !== "") qs.set("limit", String(query.limit));
   const tail = qs.toString();
   return jsonFetch(`/api/posts${tail ? `?${tail}` : ""}`, { method: "GET" });
 }
@@ -164,6 +166,19 @@ export function postComment(postId, text, imageUrl, parentId) {
   });
 }
 
+export function patchComment(postId, commentId, text) {
+  return jsonFetch(`/api/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ text }),
+  });
+}
+
+export function deleteComment(postId, commentId) {
+  return jsonFetch(`/api/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`, {
+    method: "DELETE",
+  });
+}
+
 export function patchProfile(patch) {
   return jsonFetch("/api/profile", { method: "PATCH", body: JSON.stringify(patch) });
 }
@@ -181,4 +196,59 @@ export function getPresence(ids) {
   const qs = new URLSearchParams();
   if (ids?.length) qs.set("ids", ids.join(","));
   return jsonFetch(`/api/presence?${qs.toString()}`, { method: "GET" });
+}
+
+/** Server-backed post report (duplicate returns 409). */
+export function submitPostReport(postId, reason) {
+  return jsonFetch(`/api/posts/${encodeURIComponent(postId)}/report`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason || "Reported" }),
+  });
+}
+
+/** Friend graph mutations; response body matches `/api/auth/me` shape (+ ok). */
+export function friendAction(payload) {
+  return jsonFetch("/api/friends", { method: "POST", body: JSON.stringify(payload ?? {}) });
+}
+
+/** ILIKE search over post bodies + author handle/name (paginated). */
+export function searchForum(query = {}) {
+  const qs = new URLSearchParams();
+  if (query.q) qs.set("q", query.q);
+  if (query.tag && query.tag !== "All") qs.set("tag", query.tag);
+  if (query.cursor) qs.set("cursor", query.cursor);
+  if (query.limit != null && query.limit !== "") qs.set("limit", String(query.limit));
+  const tail = qs.toString();
+  return jsonFetch(`/api/search${tail ? `?${tail}` : ""}`, { method: "GET" });
+}
+
+export function adminListOpenReports(limit) {
+  const qs = limit != null ? `?limit=${encodeURIComponent(String(limit))}` : "";
+  return jsonFetch(`/api/admin/reports${qs}`, { method: "GET" });
+}
+
+export function adminResolveReport(reportId, status) {
+  return jsonFetch(`/api/admin/reports/${encodeURIComponent(reportId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+/** Staff session cookie (same browser as Talks moderator). */
+export function adminDeletePost(postId) {
+  return jsonFetch(`/api/admin/posts/${encodeURIComponent(postId)}`, { method: "DELETE" });
+}
+
+export function adminPatchPostModeration(postId, patch) {
+  return jsonFetch(`/api/admin/posts/${encodeURIComponent(postId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch ?? {}),
+  });
+}
+
+export function adminPatchUser(userId, patch) {
+  return jsonFetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch ?? {}),
+  });
 }

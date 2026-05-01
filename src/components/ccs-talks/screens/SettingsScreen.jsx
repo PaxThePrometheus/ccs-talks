@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { APP_CONFIG } from "../config/appConfig";
+import { showToast } from "../state/toastBus";
 import { useAppState } from "../state/AppState";
 
 /**
@@ -82,8 +83,14 @@ export function SettingsScreen() {
                 </select>
               </Row>
               <Row label="Show NSFW thumbnails" tokens={tokens}><Toggle checked={prefs.showSensitive} onChange={(v) => updatePrefs({ showSensitive: v })} /></Row>
-              <Row label="Mark all subscriptions as read" tokens={tokens}><button style={btn(tokens, "ghost")}>Mark read</button></Row>
-              <Row label="Clear search history" tokens={tokens}><button style={btn(tokens, "ghost")}>Clear</button></Row>
+              <Row label="Mark all subscriptions as read" tokens={tokens}>
+                <button type="button" onClick={() => updatePrefs({ subsLastReadAt: Date.now() })} style={btn(tokens, "ghost")}>
+                  Mark read
+                </button>
+              </Row>
+              <Row label="Clear search history (this browser)" tokens={tokens}>
+                <button type="button" onClick={clearSearchHistory} style={btn(tokens, "ghost")}>Clear</button>
+              </Row>
             </Section>
           )}
 

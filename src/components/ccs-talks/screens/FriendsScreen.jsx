@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useAppState } from "../state/AppState";
+import { showToast } from "../state/toastBus";
 
 export function FriendsScreen() {
   const { friends, users, profile, acceptFriend, declineFriend, removeFriend, cancelOutgoing, sendFriendRequest, tokens, prefs } = useAppState();
@@ -84,8 +85,12 @@ export function FriendsScreen() {
         <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
           {tab === "all" && friends.friends.filter(filterFn).map((id) => (
             <FriendCard key={id} user={users[id]} tokens={tokens} actions={[
-              { label: "Message", kind: "ghost", onClick: () => {} },
-              { label: "Remove", kind: "ghost", onClick: () => removeFriend(id) },
+              {
+                label: "Message",
+                kind: "ghost",
+                onClick: () => showToast("Direct messages are not available yet.", "info"),
+              },
+              { label: "Remove", kind: "ghost", onClick: () => void removeFriend(id) },
             ]} />
           ))}
           {tab === "all" && friends.friends.length === 0 && <Empty text="You don't have any friends yet — try Suggestions." tokens={tokens} />}
@@ -100,14 +105,14 @@ export function FriendsScreen() {
 
           {tab === "outgoing" && friends.outgoing.filter(filterFn).map((id) => (
             <FriendCard key={id} user={users[id]} tokens={tokens} actions={[
-              { label: "Cancel request", kind: "ghost", onClick: () => cancelOutgoing(id) },
+              { label: "Cancel request", kind: "ghost", onClick: () => void cancelOutgoing(id) },
             ]} />
           ))}
           {tab === "outgoing" && friends.outgoing.length === 0 && <Empty text="No outgoing requests." tokens={tokens} />}
 
           {tab === "suggestions" && suggestionsBase.filter(filterFn).map((id) => (
             <FriendCard key={id} user={users[id]} tokens={tokens} actions={[
-              { label: "Add friend", kind: "solid", onClick: () => sendFriendRequest(id) },
+              { label: "Add friend", kind: "solid", onClick: () => void sendFriendRequest(id) },
             ]} />
           ))}
           {tab === "suggestions" && suggestionsBase.length === 0 && (

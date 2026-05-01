@@ -197,6 +197,54 @@ export async function appendAudit(actorId, action, targetId = "", meta = {}) {
   }
 }
 
+/** Moderation queue: user-submitted post reports (open only). */
+export async function staffListOpenReports(actorRow, { limit = 80 } = {}) {
+  if (!actorRow?.id || !STAFF_ROLES.has(actorRow.role)) return { error: "forbidden", status: 403 };
+  const db = await getDb();
+  const lim = Math.max(1, Math.min(200, Number(limit) || 80));
+  const rows = await db
+    .select()
+    .from(schema.ccsReports)
+    .where(eq(schema.ccsReports.status, "open"))
+    .orderBy(desc(schema.ccsReports.createdAt))
+    .limit(lim);
+  return {
+    reports: rows.map((r) => ({
+      id: r.id,
+      postId: r.postId,
+      reporterUserId: r.reporterUserId,
+      reason: r.reason || "",
+      createdAt: Number(r.createdAt) || 0,
+    })),
+  };
+}
+
+export async function staffResolveForumReport(actorRow, reportId, nextStatus) {
+  if (!actorRow?.id || !STAFF_ROLES.has(actorRow.role)) return { error: "forbidden", status: 403 };
+  const st = String(nextStatus || "").trim().toLowerCase();
+  if (st !== "resolved" && st !== "dismissed") return { error: "invalid_status", status: 400 };
+  const rid = String(reportId || "").trim();
+  if (!rid) return { error: "missing_id", status: 400 };
+
+  const db = await getDb();
+  const [row] = await db.select().from(schema.ccsReports).where(eq(schema.ccsReports.id, rid)).limit(1);
+  if (!row) return { error: "not_found", status: 404 };
+  if (row.status !== "open") return { error: "already_closed", status: 409 };
+
+  const now = Date.now();
+  await db
+    .update(schema.ccsReports)
+    .set({
+      status: st,
+      resolvedByUserId: actorRow.id,
+      resolvedAt: now,
+    })
+    .where(eq(schema.ccsReports.id, rid));
+
+  await appendAudit(actorRow.id, "forum_report_" + st, rid, { postId: row.postId, reporterUserId: row.reporterUserId });
+  return { ok: true };
+}
+
 export async function listAudit({ limit = 100 } = {}) {
   const db = await getDb();
   const rows = await db
@@ -758,6 +806,7 @@ export async function getPublicLandingBundle() {
     cms,
     stats,
     badgeColors: siteForBadges.badgeColors && typeof siteForBadges.badgeColors === "object" ? siteForBadges.badgeColors : {},
+    tagColors: cms.tagColors && typeof cms.tagColors === "object" ? cms.tagColors : {},
     updatedAt: meta ? Number(meta.updatedAt) || null : null,
     counts: raw,
   };

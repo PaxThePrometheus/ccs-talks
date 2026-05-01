@@ -25,7 +25,7 @@ export function ActivitiesScreen() {
     >
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
         <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.4px", fontSize: 18 }}>{APP_CONFIG.routes.activities.title}</div>
-        <div style={{ color: tokens.textMuted, fontSize: 13, marginTop: 2 }}>Your recent actions across CCS Talks.</div>
+        <div style={{ color: tokens.textMuted, fontSize: 13, marginTop: 2 }}>Forum and profile actions synced with this browser.</div>
 
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
           {activities.map((a) => {

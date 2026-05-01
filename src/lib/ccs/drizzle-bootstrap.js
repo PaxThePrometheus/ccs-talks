@@ -99,5 +99,26 @@ export function ddlFragments() {
       expires_at bigint NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS ccs_password_reset_tokens_token_idx ON ccs_password_reset_tokens (token)`,
+    `CREATE TABLE IF NOT EXISTS ccs_reports (
+      id text PRIMARY KEY,
+      post_id text NOT NULL,
+      reporter_user_id text NOT NULL,
+      reason text NOT NULL DEFAULT '',
+      status text NOT NULL DEFAULT 'open',
+      created_at bigint NOT NULL,
+      resolved_by_user_id text NOT NULL DEFAULT '',
+      resolved_at bigint
+    )`,
+    `CREATE INDEX IF NOT EXISTS ccs_reports_open_idx ON ccs_reports (status, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS ccs_reports_post_idx ON ccs_reports (post_id)`,
+    `CREATE TABLE IF NOT EXISTS ccs_friend_requests (
+      id text PRIMARY KEY,
+      from_user_id text NOT NULL REFERENCES ccs_users(id) ON DELETE CASCADE,
+      to_user_id text NOT NULL REFERENCES ccs_users(id) ON DELETE CASCADE,
+      created_at bigint NOT NULL,
+      UNIQUE (from_user_id, to_user_id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS ccs_friend_requests_to_idx ON ccs_friend_requests (to_user_id)`,
+    `CREATE INDEX IF NOT EXISTS ccs_friend_requests_from_idx ON ccs_friend_requests (from_user_id)`,
   ];
 }

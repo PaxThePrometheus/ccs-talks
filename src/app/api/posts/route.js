@@ -10,14 +10,17 @@ export async function GET(request) {
   await ensureReady();
   const url = new URL(request.url);
   const tag = url.searchParams.get("tag");
+  const cursor = url.searchParams.get("cursor");
+  const limitRaw = url.searchParams.get("limit");
+  const limit = limitRaw != null && limitRaw !== "" ? Number(limitRaw) : undefined;
   const token = await readSessionTokenFromCookies();
 
   try {
     const viewer = token ? await resolveViewerFromSession(token) : null;
-    const payload = await fetchPublicFeed(viewer?.id ?? null, tag);
+    const payload = await fetchPublicFeed(viewer?.id ?? null, tag, { cursor: cursor || null, limit });
     return NextResponse.json(payload);
   } catch {
-    return NextResponse.json({ error: "Database unavailable.", posts: [], users: {} }, { status: 503 });
+    return NextResponse.json({ error: "Database unavailable.", posts: [], users: {}, nextCursor: null }, { status: 503 });
   }
 }
 

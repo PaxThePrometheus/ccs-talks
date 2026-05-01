@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { prepareImageFileForUpload } from "@/lib/ccs/imageCompressClient";
+import { showToast } from "../state/toastBus";
 import { Icon } from "./Icon";
 
 function buildUserList(users) {
@@ -112,7 +113,7 @@ export function FeedComposer({
         setImageUrl(url);
         setImgOpen(false);
       } catch (err) {
-        console.warn("[ccs] post image prepare", err);
+        showToast(String(err?.message || err || "Could not attach image."), "error");
       }
     })();
   };

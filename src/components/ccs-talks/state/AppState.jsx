@@ -14,6 +14,7 @@ import {
 import { DEFAULT_PROFILE } from "../config/appConfig";
 import { useLocalStorageState } from "./useLocalStorageState";
 import { getThemeTokens } from "../theme";
+import { showToast } from "./toastBus";
 
 const AppStateContext = createContext(null);
 
@@ -28,8 +29,6 @@ export function AppStateProvider({ children }) {
   const [subs, setSubs] = useLocalStorageState("ccs.subs.v1", CCS_DEFAULT_SUBS);
   const [prefs, setPrefs] = useLocalStorageState("ccs.prefs.v1", CCS_DEFAULT_PREFS);
   const [isAuthed, setIsAuthed] = useLocalStorageState("ccs.authed.v1", false);
-  const [reports, setReports] = useLocalStorageState("ccs.reports.v1", []);
-  const [bannedUserIds, setBannedUserIds] = useLocalStorageState("ccs.banned.v1", []);
   /** Server-truth role for the current viewer; defaults to "student" until /api/auth/me responds. */
   const [role, setRole] = useState("student");
   const [accountEmail, setAccountEmail] = useState("");
@@ -41,6 +40,8 @@ export function AppStateProvider({ children }) {
   const [usernameCooldownUntil, setUsernameCooldownUntil] = useState(null);
   /** Badge label → hex map from `/api/landing` (Forum poll keeps it fresh). */
   const [badgeColors, setBadgeColors] = useState({});
+  /** Forum post tag label → accent hex from landing CMS (`tagColors` in JSON). */
+  const [tagColors, setTagColors] = useState({});
   /** Deep-link post screen (`/p/{id}`). */
   const [activePostId, setActivePostId] = useState(null);
   /** When set, post detail shows “not found” for this id (URL stays `/p/…`). */
@@ -50,7 +51,23 @@ export function AppStateProvider({ children }) {
 
   const applyLandingExtras = useCallback((d) => {
     if (d?.badgeColors && typeof d.badgeColors === "object") setBadgeColors(d.badgeColors);
+    if (d?.tagColors && typeof d.tagColors === "object") setTagColors(d.tagColors);
   }, []);
+
+  /** Cursor for `/api/posts` pagination (newest-first). */
+  const feedNextCursorRef = useRef(null);
+  const [feedNextCursor, setFeedNextCursor] = useState(null);
+  const forumActiveTagRef = useRef("All");
+  const forumSearchSeedRef = useRef({ q: "", tag: "" });
+  const postsRef = useRef(posts);
+  postsRef.current = posts;
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  const activePostIdRef = useRef(activePostId);
+  activePostIdRef.current = activePostId;
+  const commentsByPostIdRef = useRef(commentsByPostId);
+  commentsByPostIdRef.current = commentsByPostId;
+  const [onlineByUserId, setOnlineByUserId] = useState({});
 
   /** Skip first debounced PATCH after we just applied server snapshot (prevents PATCH loop). */
   const lastSyncedExtrasRef = useRef("");
@@ -67,9 +84,9 @@ export function AppStateProvider({ children }) {
       setRole(me.role || "student");
       setUsernameCooldownUntil(typeof me.usernameCooldownUntil === "number" ? me.usernameCooldownUntil : null);
       setAccountEmail(typeof me.email === "string" ? me.email : "");
+      /** Friends are not PATCH-synced; `/api/friends` is the source of truth. */
       lastSyncedExtrasRef.current = JSON.stringify({
         prefs: normalizePrefs(me.prefs),
-        friends: normalizeFriends(me.friends),
         subs: normalizeSubs(me.subs),
         activities: normalizeActivities(me.activities),
       });
@@ -111,15 +128,68 @@ export function AppStateProvider({ children }) {
     [isAuthed, setProfile]
   );
 
-  const refreshFeed = useCallback(async () => {
+  const reloadForumFeed = useCallback(
+    async (tag = "All") => {
+      forumActiveTagRef.current = tag;
+      try {
+        const feed = await api.getPosts({ tag: tag === "All" ? undefined : tag, limit: 30 });
+        if (Array.isArray(feed.posts)) setPosts(feed.posts);
+        if (feed.users && typeof feed.users === "object") setFeedUsersById((prev) => ({ ...prev, ...feed.users }));
+        const nc = feed.nextCursor != null && feed.nextCursor !== undefined ? feed.nextCursor : null;
+        feedNextCursorRef.current = nc;
+        setFeedNextCursor(nc);
+      } catch (e) {
+        showToast(e?.message || "Couldn’t refresh the feed.", "error");
+      }
+    },
+    [setPosts]
+  );
+
+  const loadMoreFeedPosts = useCallback(async () => {
+    const tag = forumActiveTagRef.current;
+    const cur = feedNextCursorRef.current;
+    if (!cur) return { ok: true, hasMore: false };
     try {
-      const feed = await api.getPosts();
-      if (Array.isArray(feed.posts)) setPosts(feed.posts);
+      const feed = await api.getPosts({
+        tag: tag === "All" ? undefined : tag,
+        limit: 30,
+        cursor: cur,
+      });
       if (feed.users && typeof feed.users === "object") setFeedUsersById((prev) => ({ ...prev, ...feed.users }));
-    } catch {
-      // Keep local cache when offline or server unreachable.
+      if (Array.isArray(feed.posts) && feed.posts.length) {
+        setPosts((prev) => {
+          const seen = new Set(prev.map((p) => String(p.id)));
+          const appended = feed.posts.filter((p) => p && !seen.has(String(p.id)));
+          return [...prev, ...appended];
+        });
+      }
+      const nc = feed.nextCursor != null && feed.nextCursor !== undefined ? feed.nextCursor : null;
+      feedNextCursorRef.current = nc;
+      setFeedNextCursor(nc);
+      return { ok: true, hasMore: !!nc };
+    } catch (e) {
+      showToast(e?.message || "Couldn’t load more posts.", "error");
+      return { ok: false, hasMore: false };
     }
   }, [setPosts]);
+
+  const refreshFeed = useCallback(async () => {
+    await reloadForumFeed(forumActiveTagRef.current);
+  }, [reloadForumFeed]);
+
+  const openForumSearchWith = useCallback((q, tag = "") => {
+    forumSearchSeedRef.current = {
+      q: String(q || "").trim(),
+      tag: String(tag || "").trim(),
+    };
+    setPage("search");
+  }, []);
+
+  const peekForumSearchSeed = useCallback(() => ({ ...forumSearchSeedRef.current }), []);
+
+  const clearForumSearchSeed = useCallback(() => {
+    forumSearchSeedRef.current = { q: "", tag: "" };
+  }, []);
 
   const upsertFeedPost = useCallback((next) => {
     if (!next?.id) return;
@@ -163,7 +233,7 @@ export function AppStateProvider({ children }) {
 
     async function bootstrap() {
       try {
-        const feed = await api.getPosts();
+        const feed = await api.getPosts({ limit: 30 });
 
         let me = null;
         try {
@@ -177,12 +247,16 @@ export function AppStateProvider({ children }) {
 
         if (Array.isArray(feed.posts)) setPosts(feed.posts);
         if (feed.users && typeof feed.users === "object") setFeedUsersById((prev) => ({ ...prev, ...feed.users }));
+        const nc = feed.nextCursor != null && feed.nextCursor !== undefined ? feed.nextCursor : null;
+        feedNextCursorRef.current = nc;
+        setFeedNextCursor(nc);
+        forumActiveTagRef.current = "All";
 
         if (me?.profile) hydrateAccountFromServer(me);
 
         try {
           const ld = await api.getLanding();
-          if (!cancelled && ld?.badgeColors && typeof ld.badgeColors === "object") applyLandingExtras(ld);
+          if (!cancelled) applyLandingExtras(ld);
         } catch {
           /* keep defaults */
         }
@@ -211,23 +285,75 @@ export function AppStateProvider({ children }) {
     return () => window.clearInterval(id);
   }, [isAuthed]);
 
-  /** When signed in, persist prefs · friends · subs · activities (profile uses persistFullProfile or PATCH /api/profile flows). */
+  /** Poll online state for authors visible on forum / post detail (guests OK). */
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    let cancelled = false;
+
+    const collectIds = () => {
+      const idSet = new Set();
+      const curPosts = postsRef.current || [];
+      for (const p of curPosts) {
+        if (p?.userId) idSet.add(p.userId);
+        if (idSet.size >= 64) break;
+      }
+      if (pageRef.current === "post" && activePostIdRef.current) {
+        const pid = String(activePostIdRef.current);
+        const post = curPosts.find((x) => String(x.id) === pid);
+        if (post?.userId) idSet.add(post.userId);
+        const rows = commentsByPostIdRef.current[pid] || [];
+        for (const r of rows) {
+          if (r?.userId) idSet.add(r.userId);
+          if (idSet.size >= 64) break;
+        }
+      }
+      return [...idSet].slice(0, 64);
+    };
+
+    const poll = async () => {
+      if (pageRef.current !== "forum" && pageRef.current !== "post") return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      const ids = collectIds();
+      if (!ids.length) return;
+      try {
+        const data = await api.getPresence(ids);
+        if (cancelled || !data?.online || typeof data.online !== "object") return;
+        setOnlineByUserId((prev) => ({ ...prev, ...data.online }));
+      } catch {
+        /* ignore */
+      }
+    };
+
+    void poll();
+    const id = window.setInterval(poll, 30_000);
+    const onVis = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") void poll();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [page, activePostId]);
+
+  /** When signed in, persist prefs · subs · activities (friends use `/api/friends`). */
   useEffect(() => {
     if (!isAuthed || typeof window === "undefined") return undefined;
-    const snap = JSON.stringify({ prefs, friends, subs, activities });
+    const snap = JSON.stringify({ prefs, subs, activities });
     if (snap === lastSyncedExtrasRef.current) return undefined;
     const t = window.setTimeout(() => {
       void (async () => {
         try {
-          await api.patchAccount({ prefs, friends, subs, activities });
+          await api.patchAccount({ prefs, subs, activities });
           lastSyncedExtrasRef.current = snap;
         } catch {
-          /* offline / transient */
+          /* offline / transient — prefs stay local */
         }
       })();
     }, 1000);
     return () => window.clearTimeout(t);
-  }, [isAuthed, prefs, friends, subs, activities]);
+  }, [isAuthed, prefs, subs, activities]);
 
   // Apply mode-specific css vars to <body> so any tailwind/utility falls back nicely
   useEffect(() => {
@@ -275,8 +401,9 @@ export function AppStateProvider({ children }) {
         const key = String(postId);
         const rows = Array.isArray(data.comments) ? data.comments : [];
         setCommentsByPostId((m) => ({ ...m, [key]: rows }));
-      } catch {
-        /* ignore */
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: e };
       }
     },
     [mergeFeedUsers]
@@ -336,7 +463,9 @@ export function AppStateProvider({ children }) {
       setProfileVisitUserId(id);
       setVisitedProfileFriends(null);
       setPage("profile");
-      void fetchAndMergeVisit(id).catch(() => {});
+      void fetchAndMergeVisit(id).catch((e) => {
+        showToast(e?.message || "Couldn’t load this profile.", "error");
+      });
     },
     [setPage, fetchAndMergeVisit]
   );
@@ -408,22 +537,8 @@ export function AppStateProvider({ children }) {
       }
 
       addActivity({ type: "comment", postId: key, userId });
-    } catch {
-      setCommentsByPostId((m) => {
-        const prev = m[key] || m[postId] || [];
-        const next = [
-          ...prev,
-          {
-            id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
-            userId,
-            text,
-            ts: Date.now(),
-            parentId: parentId && String(parentId).trim() ? String(parentId).trim() : null,
-          },
-        ];
-        return { ...m, [key]: next };
-      });
-      addActivity({ type: "comment", postId: key, userId });
+    } catch (e) {
+      showToast(e?.message || "Couldn’t post comment.", "error");
     }
   };
 
@@ -450,9 +565,8 @@ export function AppStateProvider({ children }) {
       const out = await api.togglePostBookmark(postId);
       if (out?.post) upsertFeedPost(out.post);
       addActivity({ type: "bookmark", postId, userId: profile.id });
-    } catch {
-      setPosts((ps) => ps.map((p) => (String(p.id) === String(postId) ? { ...p, bookmarked: !p.bookmarked } : p)));
-      addActivity({ type: "bookmark", postId, userId: profile.id });
+    } catch (e) {
+      showToast(e?.message || "Couldn’t update bookmark.", "error");
     }
   };
 
@@ -461,38 +575,85 @@ export function AppStateProvider({ children }) {
       const out = await api.togglePostLike(postId);
       if (out?.post) upsertFeedPost(out.post);
       addActivity({ type: "like", postId, userId: profile.id });
-    } catch {
-      setPosts((ps) => ps.map((p) => (String(p.id) === String(postId) ? { ...p, likes: p.likes + 1 } : p)));
-      addActivity({ type: "like", postId, userId: profile.id });
+    } catch (e) {
+      showToast(e?.message || "Couldn’t update like.", "error");
     }
   };
 
-  const reportPost = (postId, reason = "Reported") => {
-    setReports((rs) => [
-      { id: `r_${Date.now()}_${Math.random().toString(16).slice(2)}`, postId, reason, by: profile.id, ts: Date.now(), status: "open" },
-      ...rs,
-    ].slice(0, 500));
-    addActivity({ type: "report", postId, userId: profile.id, reason });
+  const reportPost = async (postId, reason = "Reported") => {
+    try {
+      await api.submitPostReport(postId, reason);
+      showToast("Thanks — moderators will review this report.", "success");
+      setPosts((ps) =>
+        ps.map((p) =>
+          String(p.id) === String(postId)
+            ? { ...p, openReportCount: Math.max(0, Number(p.openReportCount ?? 0) + 1) }
+            : p
+        )
+      );
+      addActivity({ type: "report", postId, userId: profile.id, reason });
+    } catch (e) {
+      if (e?.status === 409) showToast(String(e.message || "You already reported this post."), "info");
+      else showToast(e?.message || "Couldn’t submit report.", "error");
+    }
   };
 
-  // -------- Moderation --------
-  const resolveReport = (id, status = "resolved") => {
-    setReports((rs) => rs.map((r) => (r.id === id ? { ...r, status } : r)));
+  // -------- Moderation (staff session; same `/api/admin/*` as Admin Console) --------
+  const deletePost = async (postId) => {
+    try {
+      await api.adminDeletePost(postId);
+      setPosts((ps) => ps.filter((p) => String(p.id) !== String(postId)));
+      showToast("Post removed.", "success");
+      addActivity({ type: "mod_delete_post", postId, userId: profile.id });
+    } catch (e) {
+      showToast(e?.message || "Couldn’t delete post.", "error");
+    }
   };
-  const deletePost = (postId) => {
-    setPosts((ps) => ps.filter((p) => p.id !== postId));
-    addActivity({ type: "mod_delete_post", postId, userId: profile.id });
+  const pinPost = async (postId) => {
+    const row = posts.find((p) => String(p.id) === String(postId));
+    const nextPinned = !row?.pinned;
+    try {
+      await api.adminPatchPostModeration(postId, { pinned: nextPinned });
+      setPosts((ps) => ps.map((p) => (String(p.id) === String(postId) ? { ...p, pinned: nextPinned } : p)));
+      showToast(nextPinned ? "Post pinned." : "Pin removed.", "success");
+    } catch (e) {
+      showToast(e?.message || "Couldn’t update pin.", "error");
+    }
   };
-  const pinPost = (postId) => {
-    setPosts((ps) => ps.map((p) => (p.id === postId ? { ...p, pinned: !p.pinned } : p)));
+  const banUser = async (userId, reasonText = "") => {
+    try {
+      await api.adminPatchUser(userId, { banned: true, bannedReason: reasonText || "Forum moderation" });
+      showToast("User banned.", "success");
+      addActivity({ type: "mod_ban", userId });
+    } catch (e) {
+      showToast(e?.message || "Couldn’t ban user.", "error");
+    }
   };
-  const banUser = (userId) => {
-    setBannedUserIds((b) => (b.includes(userId) ? b : [...b, userId]));
-    addActivity({ type: "mod_ban", userId });
+  const unbanUser = async (userId) => {
+    try {
+      await api.adminPatchUser(userId, { banned: false });
+      showToast("Ban lifted.", "success");
+      addActivity({ type: "mod_unban", userId });
+    } catch (e) {
+      showToast(e?.message || "Couldn’t lift ban.", "error");
+    }
   };
-  const unbanUser = (userId) => {
-    setBannedUserIds((b) => b.filter((x) => x !== userId));
-    addActivity({ type: "mod_unban", userId });
+
+  const runFriendMutation = async (body, activityPayload) => {
+    try {
+      const out = await api.friendAction(body);
+      if (!out?.ok) {
+        showToast(String(out?.error || "Couldn’t update friends."), "error");
+        return false;
+      }
+      const { ok: _omit, ...wire } = out;
+      hydrateAccountFromServer(wire);
+      if (activityPayload) addActivity(activityPayload);
+      return true;
+    } catch (e) {
+      showToast(e?.message || "Couldn’t update friends.", "error");
+      return false;
+    }
   };
 
   const sharePost = async (postId) => {
@@ -500,8 +661,13 @@ export function AppStateProvider({ children }) {
     const url = typeof window !== "undefined" && id ? `${window.location.origin}/p/${id}` : "";
     try {
       if (url) await navigator.clipboard.writeText(url);
+      else throw new Error("missing_url");
     } catch {
-      // ignore
+      if (url && typeof window !== "undefined" && window.prompt) {
+        window.prompt("Copy link to this post:", url);
+      } else {
+        showToast("Couldn’t copy link to clipboard.", "error");
+      }
     }
     addActivity({ type: "share", postId, userId: profile.id });
   };
@@ -512,35 +678,78 @@ export function AppStateProvider({ children }) {
     const url = typeof window !== "undefined" && p && c ? `${window.location.origin}/p/${p}#c-${c}` : "";
     try {
       if (url) await navigator.clipboard.writeText(url);
+      else throw new Error("missing_url");
     } catch {
-      // ignore
+      if (url && typeof window !== "undefined" && window.prompt) {
+        window.prompt("Copy link to this comment:", url);
+      } else {
+        showToast("Couldn’t copy link to clipboard.", "error");
+      }
     }
     addActivity({ type: "share_comment", postId: String(postId), commentId: String(commentId), userId: profile.id });
   };
 
+  const updateComment = useCallback(
+    async (postId, commentId, text) => {
+      const key = String(postId);
+      const idStr = String(commentId);
+      try {
+        const out = await api.patchComment(postId, commentId, text);
+        if (out?.comment) {
+          setCommentsByPostId((m) => {
+            const prev = m[key] || [];
+            return {
+              ...m,
+              [key]: prev.map((row) => (String(row.id) === idStr ? { ...row, ...out.comment } : row)),
+            };
+          });
+        }
+        showToast("Comment updated.", "success");
+        return true;
+      } catch (e) {
+        showToast(e?.message || "Couldn’t save comment.", "error");
+        return false;
+      }
+    },
+    [setCommentsByPostId]
+  );
+
+  const removeComment = useCallback(
+    async (postId, commentId) => {
+      const key = String(postId);
+      const idStr = String(commentId);
+      try {
+        const out = await api.deleteComment(postId, commentId);
+        if (out?.post) upsertFeedPost(out.post);
+        setCommentsByPostId((m) => {
+          const prev = m[key] || [];
+          return { ...m, [key]: prev.filter((row) => String(row.id) !== idStr) };
+        });
+        showToast("Comment removed.", "success");
+        return true;
+      } catch (e) {
+        showToast(e?.message || "Couldn’t delete comment.", "error");
+        return false;
+      }
+    },
+    [upsertFeedPost, setCommentsByPostId]
+  );
+
   // -------- Friends --------
-  const acceptFriend = (id) => {
-    setFriends((f) => ({
-      ...f,
-      pending: f.pending.filter((x) => x !== id),
-      friends: f.friends.includes(id) ? f.friends : [...f.friends, id],
-    }));
-    addActivity({ type: "friend_accept", userId: id });
+  const acceptFriend = async (id) => {
+    await runFriendMutation({ action: "accept", fromUserId: String(id) }, { type: "friend_accept", userId: id });
   };
-  const declineFriend = (id) => {
-    setFriends((f) => ({ ...f, pending: f.pending.filter((x) => x !== id) }));
-    addActivity({ type: "friend_decline", userId: id });
+  const declineFriend = async (id) => {
+    await runFriendMutation({ action: "decline", fromUserId: String(id) }, { type: "friend_decline", userId: id });
   };
-  const removeFriend = (id) => {
-    setFriends((f) => ({ ...f, friends: f.friends.filter((x) => x !== id) }));
-    addActivity({ type: "friend_remove", userId: id });
+  const removeFriend = async (id) => {
+    await runFriendMutation({ action: "remove", userId: String(id) }, { type: "friend_remove", userId: id });
   };
-  const cancelOutgoing = (id) => {
-    setFriends((f) => ({ ...f, outgoing: f.outgoing.filter((x) => x !== id) }));
+  const cancelOutgoing = async (id) => {
+    await runFriendMutation({ action: "cancel", toUserId: String(id) }, null);
   };
-  const sendFriendRequest = (id) => {
-    setFriends((f) => ({ ...f, outgoing: f.outgoing.includes(id) ? f.outgoing : [...f.outgoing, id] }));
-    addActivity({ type: "friend_request", userId: id });
+  const sendFriendRequest = async (id) => {
+    await runFriendMutation({ action: "request", toUserId: String(id) }, { type: "friend_request", userId: id });
   };
 
   // -------- Subscriptions --------
@@ -607,10 +816,15 @@ export function AppStateProvider({ children }) {
       setPosts,
       commentsByPostId,
       addComment,
+      updateComment,
+      removeComment,
       updatePost,
       toggleBookmark,
       likePost,
       refreshFeed,
+      reloadForumFeed,
+      loadMoreFeedPosts,
+      feedNextCursor,
       publishPost,
       loadCommentsFromServer,
       reportPost,
@@ -650,15 +864,17 @@ export function AppStateProvider({ children }) {
       hydrateAccountFromServer,
       persistFullProfile,
       badgeColors,
+      tagColors,
       applyLandingExtras,
-      // moderation
-      reports,
-      resolveReport,
+      onlineByUserId,
+      openForumSearchWith,
+      peekForumSearchSeed,
+      clearForumSearchSeed,
+      // moderation (staff API)
       deletePost,
       pinPost,
       banUser,
       unbanUser,
-      bannedUserIds,
     }),
     [
       page,
@@ -683,9 +899,10 @@ export function AppStateProvider({ children }) {
       role,
       accountEmail,
       usernameCooldownUntil,
-      reports,
-      bannedUserIds,
       refreshFeed,
+      reloadForumFeed,
+      loadMoreFeedPosts,
+      feedNextCursor,
       publishPost,
       loadCommentsFromServer,
       shareComment,
@@ -696,7 +913,14 @@ export function AppStateProvider({ children }) {
       hydrateAccountFromServer,
       persistFullProfile,
       badgeColors,
+      tagColors,
       applyLandingExtras,
+      onlineByUserId,
+      openForumSearchWith,
+      peekForumSearchSeed,
+      clearForumSearchSeed,
+      updateComment,
+      removeComment,
     ]
   );
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

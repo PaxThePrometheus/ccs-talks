@@ -15,6 +15,7 @@ const SECTIONS = [
   { key: "posts", icon: "📰", label: "Posts" },
   { key: "announcements", icon: "📣", label: "Announcements" },
   { key: "tickets", icon: "🎫", label: "Tickets" },
+  { key: "reports", icon: "🚨", label: "Post reports" },
   { key: "audit", icon: "🧾", label: "Audit log" },
   { key: "site", icon: "🛠", label: "Site settings" },
 ];
@@ -207,6 +208,7 @@ export function AdminConsole({ viewer, inviteRequired }) {
           {section === "posts" && <PostsPane onError={handleErr} />}
           {section === "announcements" && <AnnouncementsPane viewer={viewer} onError={handleErr} />}
           {section === "tickets" && <TicketsPane viewer={viewer} onError={handleErr} />}
+          {section === "reports" && <ForumReportsPane onError={handleErr} />}
           {section === "audit" && <AuditPane onError={handleErr} />}
           {section === "site" && <SitePane viewer={viewer} onError={handleErr} />}
         </div>
@@ -1729,6 +1731,84 @@ function AnnouncementsPane({ viewer, onError }) {
         ))}
       </section>
     </>
+  );
+}
+
+/** ---------- forum reports (moderation queue) ---------- */
+function ForumReportsPane({ onError }) {
+  const mono = {
+    background: "rgba(255,255,255,0.06)",
+    border: `1px solid ${t.border}`,
+    padding: "1px 6px",
+    borderRadius: 6,
+    fontSize: 11,
+    fontFamily: "var(--font-geist-mono, monospace)",
+  };
+  const [reports, setReports] = useState([]);
+
+  const reload = useCallback(async () => {
+    try {
+      const data = await jsonFetch("/api/admin/reports");
+      setReports(Array.isArray(data?.reports) ? data.reports : []);
+    } catch (e) {
+      onError(e);
+    }
+  }, [onError]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  async function resolveReport(id, status) {
+    try {
+      await jsonFetch(`/api/admin/reports/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      await reload();
+    } catch (e) {
+      onError(e);
+    }
+  }
+
+  return (
+    <section style={panel}>
+      <header style={{ ...panelHeader, gap: 12, flexWrap: "wrap" }}>
+        <span>Open post reports · {reports.length}</span>
+        <button type="button" onClick={() => void reload()} style={btn("ghost")}>
+          Refresh
+        </button>
+      </header>
+      <div style={{ padding: reports.length === 0 ? "16px" : undefined, color: reports.length === 0 ? t.muted : undefined, fontSize: 13 }}>
+        {reports.length === 0 && "There are no open reports right now."}
+      </div>
+      {reports.map((r) => (
+        <div key={r.id} style={{ ...row, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+            <div style={{ fontWeight: 950, color: t.textStrong, marginBottom: 6 }}>{r.reason || "(No reason supplied)"}</div>
+            <code style={mono}>report:{r.id}</code>
+            <div style={{ fontSize: 12, marginTop: 6, display: "flex", flexWrap: "wrap", gap: 10, color: t.muted, alignItems: "center" }}>
+              <span>
+                post <code style={mono}>{r.postId}</code>
+              </span>
+              <span>
+                reporter <code style={mono}>{r.reporterUserId}</code>
+              </span>
+              <span>{r.createdAt ? new Date(Number(r.createdAt)).toLocaleString() : ""}</span>
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <a href={`/p/${encodeURIComponent(r.postId)}`} style={{ ...btn("ghost"), textDecoration: "none", padding: "8px 10px", display: "inline-block" }}>
+                Open post in Talks
+              </a>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" onClick={() => void resolveReport(r.id, "resolved")} style={btn("solid")}>Resolve</button>
+            <button type="button" onClick={() => void resolveReport(r.id, "dismissed")} style={btn("ghost")}>Dismiss</button>
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }
 

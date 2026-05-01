@@ -9,6 +9,8 @@ export function SubscriptionsScreen() {
   const { subs, toggleTagSub, setTagNotify, toggleFollow, users, posts, setPage, tokens, prefs } = useAppState();
   const isLight = prefs.mode === "light";
   const [tab, setTab] = useState("tags");
+  const lastReadAt = Number(prefs.subsLastReadAt) || 0;
+  const newAcrossForum = posts.filter((p) => Number(p.createdAt || 0) > lastReadAt).length;
 
   return (
     <div
@@ -28,7 +30,15 @@ export function SubscriptionsScreen() {
     >
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
         <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.4px", fontSize: 18 }}>Subscriptions</div>
-        <div style={{ color: tokens.textMuted, fontSize: 13 }}>Tags and people you're following — manage notifications per source.</div>
+        <div style={{ color: tokens.textMuted, fontSize: 13 }}>
+          Tags and people you&apos;re following — manage notifications per source.
+          {" "}
+          {newAcrossForum > 0 ? (
+            <span style={{ opacity: 0.95 }}>
+              {newAcrossForum} forum {newAcrossForum === 1 ? "post" : "posts"} newer than your last &quot;Mark read&quot; tap in Settings.
+            </span>
+          ) : null}
+        </div>
 
         <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
           {[

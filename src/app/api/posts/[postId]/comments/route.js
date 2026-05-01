@@ -37,6 +37,10 @@ export async function POST(request, ctx) {
 
   const out = await addCommentEnvelope(postId, viewer.id, text, imageUrl, parentId || null);
 
+  if (out?.empty) return NextResponse.json({ error: "Comment text is empty." }, { status: 400 });
+  if (out?.tooLong) {
+    return NextResponse.json({ error: "Comment is too long." }, { status: 413 });
+  }
   if (out?.missing) return NextResponse.json({ error: "Post not found." }, { status: 404 });
   if (out?.missingParent) return NextResponse.json({ error: "Reply target not found." }, { status: 400 });
   if (out?.imageTooLarge) {

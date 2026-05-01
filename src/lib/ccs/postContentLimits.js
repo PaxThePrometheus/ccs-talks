@@ -1,6 +1,9 @@
 /** Forum post body hard cap (~10–13k prose; aligns with Discord-style long posts minus bloated payloads). */
 export const CCS_POST_BODY_MAX_CHARS = 12_800;
 
+/** Comment body cap (keeps threads readable; still room for long explanations). */
+export const CCS_COMMENT_BODY_MAX_CHARS = 8000;
+
 /** Feed card teaser before “open thread” (~3–4 short paragraphs plain text equiv.). */
 export const CCS_FEED_PREVIEW_MAX_CHARS = 480;
 

@@ -4,6 +4,18 @@
  */
 
 import { APP_CONFIG, FORUM_RAIL } from "@/components/ccs-talks/config/appConfig";
+import { normalizeHexColor } from "@/lib/ccs/badgeColors";
+
+function mergeTagColorsMap(stored, fallback) {
+  const base = fallback && typeof fallback === "object" ? { ...fallback } : {};
+  if (!stored || typeof stored !== "object") return base;
+  for (const [k, v] of Object.entries(stored)) {
+    const label = String(k || "").trim();
+    const hex = normalizeHexColor(v);
+    if (label && hex) base[label] = hex;
+  }
+  return base;
+}
 
 export function defaultLandingCms() {
   return {
@@ -69,6 +81,13 @@ export function defaultLandingCms() {
     },
     /** Tags shown in the forum composer (must match or extend feed filter chips). */
     postTagOptions: ["General", "Academics", "Tech", "Events"],
+    /** Forum tag chip accent colours (label → hex); merged with admin JSON `tagColors`. */
+    tagColors: {
+      General: "#9B0028",
+      Academics: "#4058A0",
+      Tech: "#208060",
+      Events: "#C04040",
+    },
   };
 }
 
@@ -112,6 +131,7 @@ export function mergeLandingCms(stored) {
       Array.isArray(stored.postTagOptions) && stored.postTagOptions.length > 0
         ? stored.postTagOptions.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 24)
         : d.postTagOptions,
+    tagColors: mergeTagColorsMap(stored.tagColors, d.tagColors),
   };
 }
 

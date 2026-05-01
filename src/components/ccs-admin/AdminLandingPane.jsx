@@ -93,7 +93,7 @@ export function AdminLandingPane({ onError }) {
         </header>
         <div style={{ padding: 14 }}>
           <p style={{ margin: "0 0 10px", color: tm.muted, fontSize: 13, lineHeight: 1.55 }}>
-            Edits persist in Neon (<code style={code}>ccs_site_settings</code> · key <code style={code}>landing</code>). The public homepage and forum rails read this payload; visitors pick up updates on the next poll. Staff badge labels are managed under <strong>Site settings → Badge registry</strong> (not in this JSON). Use <code style={code}>postTagOptions</code> (string array) for composer tag chips.
+            Edits persist in Neon (<code style={code}>ccs_site_settings</code> · key <code style={code}>landing</code>). The public homepage and forum rails read this payload; visitors pick up updates on the next poll. Staff badge labels are managed under <strong>Site settings → Badge registry</strong> (not in this JSON). Use <code style={code}>postTagOptions</code> (string array) for composer tag chips. Optional <code style={code}>tagColors</code> maps tag label → hex for feed tag chip accents.
           </p>
           {message && <div style={{ marginBottom: 10, color: tm.good, fontSize: 13, fontWeight: 700 }}>{message}</div>}
           <textarea

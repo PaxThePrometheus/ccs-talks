@@ -12,7 +12,7 @@ const SECTIONS = [
   { key: "account", icon: "👤", label: "Account", hint: "Identity, profile, language" },
   { key: "privacy", icon: "🔐", label: "Privacy", hint: "Visibility, DMs, blocked users" },
   { key: "notifications", icon: "🔔", label: "Notifications", hint: "Mentions, replies, digest" },
-  { key: "security", icon: "🛡", label: "Security", hint: "Password, 2FA, sessions" },
+  { key: "security", icon: "🛡", label: "Security", hint: "Managed by your account backend" },
   { key: "data", icon: "🗂", label: "Your data", hint: "Export, delete, reset" },
 ];
 
@@ -242,31 +242,14 @@ export function AccountCenterModal({ open, onCancel }) {
 
             {section === "security" && (
               <Stack>
-                <Group title="Password">
-                  <Field label="Current password"><input type="password" style={inp(280)} /></Field>
-                  <Field label="New password"><input type="password" style={inp(280)} /></Field>
-                  <Field label="Confirm new password"><input type="password" style={inp(280)} /></Field>
-                  <button style={btn("solid")}>Update password</button>
-                </Group>
-                <Group title="Two-factor authentication">
-                  <Field label="Authenticator app"><Toggle /></Field>
-                  <Field label="Backup codes"><button style={btn("ghost")}>Generate</button></Field>
-                </Group>
-                <Group title="Active sessions">
-                  {[
-                    { name: "This browser", where: "Antipolo, PH", current: true },
-                    { name: "Pixel 8 (Chrome)", where: "Manila, PH", current: false },
-                    { name: "CCS Lab PC #14", where: "OLFU Antipolo", current: false },
-                  ].map((s, i) => (
-                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderTop: i ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
-                      <div>
-                        <div style={{ fontWeight: 800 }}>{s.name}{s.current ? " · current" : ""}</div>
-                        <div style={{ color: "rgba(240,220,220,0.6)", fontSize: 12 }}>{s.where}</div>
-                      </div>
-                      {!s.current && <button style={btn("ghost")}>Sign out</button>}
-                    </div>
-                  ))}
-                  <button style={btn("ghost")}>Sign out everywhere</button>
+                <Group title="Advanced security controls">
+                  <div style={{ color: "rgba(240,220,220,0.76)", fontSize: 13, lineHeight: 1.55 }}>
+                    Password changes, MFA, device sessions, account export, and account deletion aren&apos;t built into this CCS Talks client yet —
+                    sign out from profile or use campus IT / platform admin processes when you need stronger account recovery or session control.
+                  </div>
+                  <button type="button" onClick={() => signOut()} style={{ ...btn("solid"), marginTop: 10 }}>
+                    Sign out on this browser
+                  </button>
                 </Group>
               </Stack>
             )}
@@ -278,7 +261,7 @@ export function AccountCenterModal({ open, onCancel }) {
                 </Group>
                 <Group title="Reset">
                   <Field label="Clear local cache (posts, comments, friends, subs)">
-                    <button onClick={() => { if (typeof window === "undefined") return; ["ccs.posts.v1", "ccs.comments.v1", "ccs.activities.v1", "ccs.friends.v1", "ccs.subs.v1", "ccs.reports.v1"].forEach((k) => window.localStorage.removeItem(k)); window.location.reload(); }} style={btn("ghost")}>Clear & reload</button>
+                    <button onClick={() => { if (typeof window === "undefined") return; ["ccs.posts.v1", "ccs.comments.v1", "ccs.activities.v1", "ccs.friends.v1", "ccs.subs.v1"].forEach((k) => window.localStorage.removeItem(k)); window.location.reload(); }} style={btn("ghost")}>Clear & reload</button>
                   </Field>
                   <Field label="Run welcome flow again">
                     <button

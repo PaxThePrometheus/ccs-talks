@@ -5,8 +5,6 @@ import { useState } from "react";
 export function AccountSecurityModal({ open, onCancel, onSubmit }) {
   const [tab, setTab] = useState("password");
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
-  const [twoFA, setTwoFA] = useState({ enabled: false, code: "" });
-
   if (!open) return null;
 
   return (
@@ -58,38 +56,20 @@ export function AccountSecurityModal({ open, onCancel, onSubmit }) {
           )}
 
           {tab === "2fa" && (
-            <Section title="Two-factor authentication" hint="Adds a code from your authenticator app at sign-in.">
-              <Row label={twoFA.enabled ? "2FA: Enabled" : "2FA: Disabled"}>
-                <button onClick={() => setTwoFA({ ...twoFA, enabled: !twoFA.enabled })} style={btn(twoFA.enabled ? "ghost" : "solid")}>
-                  {twoFA.enabled ? "Disable" : "Enable"}
-                </button>
-              </Row>
-              {twoFA.enabled && (
-                <>
-                  <div style={{ marginTop: 8, padding: 12, borderRadius: 12, border: "1px dashed rgba(255,255,255,0.14)", color: "rgba(240,220,220,0.7)", fontSize: 12 }}>
-                    Mock setup: scan the QR in your authenticator app, then enter the 6-digit code.
-                  </div>
-                  <Field label="6-digit code"><input value={twoFA.code} onChange={(e) => setTwoFA({ ...twoFA, code: e.target.value })} style={inp()} /></Field>
-                  <button onClick={() => onSubmit?.({ kind: "2fa", value: twoFA })} style={btn("solid")}>Verify</button>
-                </>
-              )}
+            <Section title="Two-factor authentication" hint="Not wired in CCS Talks yet.">
+              <div style={{ color: "rgba(240,220,220,0.74)", fontSize: 13, lineHeight: 1.55 }}>
+                Multi-factor enrollment and backup codes aren&apos;t available in this app build. Use your campus SSO or contact an administrator if you need MFA mandated on your identity provider.
+              </div>
+              <button type="button" disabled style={{ ...btn("ghost"), marginTop: 10, opacity: 0.5, cursor: "not-allowed" }}>
+                Coming when auth supports it
+              </button>
             </Section>
           )}
 
           {tab === "sessions" && (
-            <Section title="Active sessions" hint="Sign out devices you don't recognize.">
-              {[
-                { id: "this", name: "This browser", where: "Antipolo, PH", current: true },
-                { id: "phone", name: "Pixel 8 (Chrome)", where: "Manila, PH", current: false },
-                { id: "lab", name: "CCS Lab PC #14", where: "OLFU Antipolo", current: false },
-              ].map((s) => (
-                <Row key={s.id} label={`${s.name}${s.current ? " · current" : ""}`}>
-                  <span style={{ color: "rgba(240,220,220,0.6)", fontSize: 12 }}>{s.where}</span>
-                  {!s.current && <button style={btn("ghost")}>Sign out</button>}
-                </Row>
-              ))}
-              <div style={{ marginTop: 10 }}>
-                <button style={btn("ghost")}>Sign out everywhere</button>
+            <Section title="Active sessions" hint="Per-device session listing is not connected.">
+              <div style={{ color: "rgba(240,220,220,0.74)", fontSize: 13, lineHeight: 1.55 }}>
+                You can revoke this browser session via <strong>Sign out</strong> on your profile. Remote sign-out everywhere requires server-side session tables that this screen does not read yet.
               </div>
             </Section>
           )}

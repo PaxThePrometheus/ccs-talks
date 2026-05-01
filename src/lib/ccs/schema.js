@@ -1,4 +1,4 @@
-import { bigint, boolean, jsonb, pgTable, text } from "drizzle-orm/pg-core";
+import { bigint, boolean, jsonb, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const ccsUsers = pgTable("ccs_users", {
   id: text("id").primaryKey(),
@@ -96,3 +96,28 @@ export const ccsPasswordResetTokens = pgTable("ccs_password_reset_tokens", {
   token: text("token").notNull().unique(),
   expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
 });
+
+/** Moderation: user-flagged threads (staff review). */
+export const ccsReports = pgTable("ccs_reports", {
+  id: text("id").primaryKey(),
+  postId: text("post_id").notNull(),
+  reporterUserId: text("reporter_user_id").notNull(),
+  reason: text("reason").notNull().default(""),
+  /** 'open' | 'resolved' | 'dismissed' */
+  status: text("status").notNull().default("open"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  resolvedByUserId: text("resolved_by_user_id").notNull().default(""),
+  resolvedAt: bigint("resolved_at", { mode: "number" }),
+});
+
+/** Pending friend invitations (accepted rows are deleted after both users are updated). */
+export const ccsFriendRequests = pgTable(
+  "ccs_friend_requests",
+  {
+    id: text("id").primaryKey(),
+    fromUserId: text("from_user_id").notNull(),
+    toUserId: text("to_user_id").notNull(),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  },
+  (t) => [uniqueIndex("ccs_friend_requests_from_to_uidx").on(t.fromUserId, t.toUserId)]
+);

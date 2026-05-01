@@ -23,6 +23,8 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
     reportPost,
     profile,
     loadCommentsFromServer,
+    updateComment,
+    removeComment,
     prefs,
     tokens,
     visitUserProfile,
@@ -30,6 +32,7 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
     activePostId,
     postNotFoundId,
     isAuthed,
+    onlineByUserId,
   } = useAppState();
 
   const postId = activePostId;
@@ -44,6 +47,7 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
   const [editText, setEditText] = useState("");
   const [imageViewer, setImageViewer] = useState(null);
   const [highlightId, setHighlightId] = useState(null);
+  const [commentsErr, setCommentsErr] = useState(null);
 
   const post = useMemo(() => (postId != null ? posts.find((p) => String(p.id) === String(postId)) : null), [posts, postId]);
   const user = post ? users[post.userId] : null;
@@ -56,8 +60,16 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
 
   useEffect(() => {
     if (postId == null) return undefined;
-    void loadCommentsFromServer(postId);
-    return undefined;
+    let alive = true;
+    setCommentsErr(null);
+    void (async () => {
+      const r = await loadCommentsFromServer(postId);
+      if (!alive) return;
+      if (!r?.ok) setCommentsErr(String(r?.error?.message || "Could not load comments."));
+    })();
+    return () => {
+      alive = false;
+    };
   }, [postId, loadCommentsFromServer]);
 
   const commentById = useMemo(() => {
@@ -298,6 +310,19 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <div style={{ fontWeight: 900, color: tokens.textStrong, letterSpacing: "-0.2px", lineHeight: 1.1 }}>{user?.name ?? "Unknown"}</div>
+                    {post?.userId && onlineByUserId[post.userId] ? (
+                      <span
+                        title="Online"
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: "#3ddc84",
+                          boxShadow: "0 0 0 2px rgba(0,0,0,0.2)",
+                          flexShrink: 0,
+                        }}
+                      />
+                    ) : null}
                     <UserStatusBadgeRow user={user} tokens={tokens} isLight={isLight} chromed={isLight ? undefined : "modalDark"} dense gap={6} />
                   </div>
                   <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, color: tokens.textMuted, fontSize: 12 }}>
@@ -406,6 +431,35 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
               <div style={{ color: tokens.textMuted, fontSize: 12 }}>{rawComments.length} total</div>
             </div>
 
+            {commentsErr && (
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: `1px solid ${tokens.border}`,
+                  background: tokens.surfaceAlt,
+                  color: tokens.text,
+                  fontSize: 13,
+                }}
+              >
+                <div style={{ fontWeight: 800, marginBottom: 8 }}>{commentsErr}</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCommentsErr(null);
+                    void (async () => {
+                      const r = await loadCommentsFromServer(postId);
+                      if (!r?.ok) setCommentsErr(String(r?.error?.message || "Could not load comments."));
+                    })();
+                  }}
+                  style={ghostBtn(tokens)}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
             {!readOnly && isAuthed && (
               <div style={{ marginBottom: 14 }}>
                 <FeedComposer
@@ -433,6 +487,10 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
                 <CommentBlock
                   key={c.id}
                   c={c}
+                  postId={post.id}
+                  viewerId={profile.id}
+                  updateComment={updateComment}
+                  removeComment={removeComment}
                   users={users}
                   commentById={commentById}
                   repliesByParent={repliesByParent}
@@ -445,6 +503,7 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
                   shareForComment={shareForComment}
                   readOnly={readOnly}
                   isAuthed={isAuthed}
+                  onlineByUserId={onlineByUserId}
                   replyTargetCommentId={replyTargetCommentId}
                   toggleReplyTarget={toggleReplyTarget}
                   replyText={replyText}
@@ -479,6 +538,10 @@ function replyContextSnippet(text) {
 
 function CommentBlock({
   c,
+  postId,
+  viewerId,
+  updateComment,
+  removeComment,
   users,
   commentById,
   repliesByParent,
@@ -491,6 +554,7 @@ function CommentBlock({
   shareForComment,
   readOnly,
   isAuthed,
+  onlineByUserId,
   replyTargetCommentId,
   toggleReplyTarget,
   replyText,
@@ -501,6 +565,8 @@ function CommentBlock({
   replies,
   depth = 0,
 }) {
+  const [editingComment, setEditingComment] = useState(false);
+  const [editDraft, setEditDraft] = useState("");
   const u = users[c.userId];
   const hi = highlightId === c.id;
   const parentRow = depth > 0 && c.parentId ? commentById[String(c.parentId)] : null;
@@ -508,6 +574,7 @@ function CommentBlock({
   const threadMargin = depth ? 20 : 0;
   const threadPad = depth ? 14 : 0;
   const showReplyComposer = !readOnly && isAuthed && replyTargetCommentId === c.id;
+  const canEditOwn = !readOnly && isAuthed && viewerId && c.userId === viewerId;
 
   return (
     <div>
@@ -570,6 +637,19 @@ function CommentBlock({
         )}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <div style={{ fontWeight: 850, color: tokens.textStrong }}>{u?.name ?? "Unknown"}</div>
+          {c.userId && onlineByUserId?.[c.userId] ? (
+            <span
+              title="Online"
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: "#3ddc84",
+                boxShadow: "0 0 0 2px rgba(0,0,0,0.2)",
+                flexShrink: 0,
+              }}
+            />
+          ) : null}
           <UserStatusBadgeRow user={u} tokens={tokens} isLight={isLight} chromed={isLight ? undefined : "modalDark"} dense gap={4} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
@@ -577,18 +657,27 @@ function CommentBlock({
           <span style={{ marginLeft: "auto", color: tokens.textMuted, fontSize: 11 }}>{new Date(c.ts).toLocaleString()}</span>
         </div>
         <div style={{ marginTop: 6, fontSize: 13, lineHeight: 1.55 }}>
-          <CcsMarkdown
-            source={c.text}
-            accentColor="#ff9ab0"
-            handleToUserId={handleDir}
-            onVisitUser={visitUserProfile}
-            tokens={{
-              accent: tokens.accent,
-              text: tokens.text,
-              textMuted: tokens.textMuted,
-              textStrong: tokens.textStrong,
-            }}
-          />
+          {editingComment ? (
+            <textarea
+              value={editDraft}
+              onChange={(e) => setEditDraft(e.target.value)}
+              rows={4}
+              style={inputStyle(tokens, true)}
+            />
+          ) : (
+            <CcsMarkdown
+              source={c.text}
+              accentColor="#ff9ab0"
+              handleToUserId={handleDir}
+              onVisitUser={visitUserProfile}
+              tokens={{
+                accent: tokens.accent,
+                text: tokens.text,
+                textMuted: tokens.textMuted,
+                textStrong: tokens.textStrong,
+              }}
+            />
+          )}
         </div>
         {c.imageUrl ? (
           <div style={{ marginTop: 8 }}>
@@ -629,6 +718,54 @@ function CommentBlock({
           </div>
         ) : null}
         <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          {canEditOwn && !editingComment && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingComment(true);
+                  setEditDraft(c.text || "");
+                }}
+                style={actionBtnStyle(tokens)}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== "undefined" && !window.confirm("Delete this comment?")) return;
+                  void removeComment(postId, c.id);
+                }}
+                style={actionBtnStyle(tokens)}
+              >
+                Delete
+              </button>
+            </>
+          )}
+          {canEditOwn && editingComment && (
+            <>
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = await updateComment(postId, c.id, editDraft);
+                  if (ok) setEditingComment(false);
+                }}
+                style={actionBtnStyle(tokens, "solid")}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingComment(false);
+                  setEditDraft("");
+                }}
+                style={ghostBtn(tokens)}
+              >
+                Cancel
+              </button>
+            </>
+          )}
           {!readOnly && isAuthed && (
             <button type="button" onClick={() => toggleReplyTarget(c.id)} style={actionBtnStyle(tokens)}>
               {replyTargetCommentId === c.id ? "Cancel reply" : "Reply"}
@@ -678,6 +815,10 @@ function CommentBlock({
         <div key={r.id} style={{ marginTop: 10 }}>
           <CommentBlock
             c={r}
+            postId={postId}
+            viewerId={viewerId}
+            updateComment={updateComment}
+            removeComment={removeComment}
             users={users}
             commentById={commentById}
             repliesByParent={repliesByParent}
@@ -690,6 +831,7 @@ function CommentBlock({
             shareForComment={shareForComment}
             readOnly={readOnly}
             isAuthed={isAuthed}
+            onlineByUserId={onlineByUserId}
             replyTargetCommentId={replyTargetCommentId}
             toggleReplyTarget={toggleReplyTarget}
             replyText={replyText}

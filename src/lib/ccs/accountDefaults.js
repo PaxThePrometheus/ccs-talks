@@ -21,6 +21,8 @@ export const CCS_DEFAULT_PREFS = {
   reduceEffects: false,
   largerText: false,
   onboardingCompleted: false,
+  /** Client hint for “subscriptions read” UX (no push backend yet). */
+  subsLastReadAt: 0,
 };
 
 /** Whitelisted preference keys — anything else from the client is dropped. */

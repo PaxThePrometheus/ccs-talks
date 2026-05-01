@@ -1,6 +1,7 @@
 import crypto, { randomUUID } from "node:crypto";
+import { Buffer } from "node:buffer";
 import { DEFAULT_PROFILE } from "@/components/ccs-talks/config/appConfig";
-import { asc, desc, eq, inArray, lte, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import {
   CCS_DEFAULT_FRIENDS,
   CCS_DEFAULT_PREFS,
@@ -80,7 +81,22 @@ export async function purgeExpiredSessions(db) {
   await db.delete(schema.ccsSessions).where(lte(schema.ccsSessions.expiresAt, now));
 }
 
+async function enrichLegacyPostsOpenReportCounts(db, legacyPosts) {
+  const ids = legacyPosts.map((p) => p?.id).filter(Boolean);
+  if (!ids.length) return;
+  const rows = await db
+    .select({ postId: schema.ccsReports.postId, n: count() })
+    .from(schema.ccsReports)
+    .where(and(inArray(schema.ccsReports.postId, ids), eq(schema.ccsReports.status, "open")))
+    .groupBy(schema.ccsReports.postId);
+  const map = Object.fromEntries(rows.map((r) => [r.postId, Number(r.n ?? 0) || 0]));
+  for (const p of legacyPosts) {
+    if (p && p.id != null) p.openReportCount = map[String(p.id)] ?? 0;
+  }
+}
+
 async function hydrateClientPosts(db, viewerUserId, legacyPosts) {
+  await enrichLegacyPostsOpenReportCounts(db, legacyPosts);
   const idsNeeded = [...new Set(legacyPosts.map((p) => p.userId).filter(Boolean))];
   if (viewerUserId) idsNeeded.push(viewerUserId);
   const uniq = [...new Set(idsNeeded)];
@@ -93,20 +109,72 @@ async function hydrateClientPosts(db, viewerUserId, legacyPosts) {
   return buildFeed(shimDb, viewerUserId, {}).posts;
 }
 
-export async function fetchPublicFeed(viewerUserId, tagFilter) {
+const FEED_PAGE_DEFAULT = 30;
+const FEED_PAGE_MAX = 100;
+
+function encodeFeedCursor(row) {
+  if (!row?.id) return null;
+  const t = Number(row.createdAt);
+  if (!Number.isFinite(t)) return null;
+  return Buffer.from(JSON.stringify({ t, i: String(row.id) }), "utf8").toString("base64url");
+}
+
+function decodeFeedCursor(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  try {
+    const j = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+    const t = Number(j.t);
+    const i = String(j.i || "").trim();
+    if (!Number.isFinite(t) || !i) return null;
+    return { createdAt: t, id: i };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Public feed with cursor pagination (newest first; stable tie-break on `id`).
+ * @param {string|null} viewerUserId
+ * @param {string} [tagFilter]  "All" or omit = no tag filter
+ * @param {{ limit?: number, cursor?: string|null }} [opts]
+ */
+export async function fetchPublicFeed(viewerUserId, tagFilter, opts = {}) {
   const db = await getDb();
   await purgeExpiredSessions(db);
 
-  let q = db.select().from(schema.ccsPosts);
-  if (tagFilter && tagFilter !== "All") {
-    q = q.where(eq(schema.ccsPosts.tag, tagFilter));
-  }
-  const rows = await q.orderBy(desc(schema.ccsPosts.createdAt));
+  let limit = Number(opts.limit);
+  if (!Number.isFinite(limit) || limit < 1) limit = FEED_PAGE_DEFAULT;
+  if (limit > FEED_PAGE_MAX) limit = FEED_PAGE_MAX;
 
-  const legacy = rows.map(postRowToLegacy);
+  const cursor = decodeFeedCursor(opts.cursor);
+
+  const parts = [];
+  if (tagFilter && tagFilter !== "All") {
+    parts.push(eq(schema.ccsPosts.tag, String(tagFilter).trim()));
+  }
+  if (cursor) {
+    parts.push(
+      or(
+        lt(schema.ccsPosts.createdAt, cursor.createdAt),
+        and(eq(schema.ccsPosts.createdAt, cursor.createdAt), lt(schema.ccsPosts.id, cursor.id))
+      )
+    );
+  }
+
+  let q = db.select().from(schema.ccsPosts);
+  if (parts.length === 1) q = q.where(parts[0]);
+  else if (parts.length > 1) q = q.where(and(...parts));
+
+  const rows = await q.orderBy(desc(schema.ccsPosts.createdAt), desc(schema.ccsPosts.id)).limit(limit + 1);
+  const hasMore = rows.length > limit;
+  const slice = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore && slice.length ? encodeFeedCursor(slice[slice.length - 1]) : null;
+
+  const legacy = slice.map(postRowToLegacy);
+  await enrichLegacyPostsOpenReportCounts(db, legacy);
 
   /** Viewer bookmarks / likedBy flags need viewer row merged into shim. */
-  const idsNeeded = [...new Set(rows.map((r) => r.userId).filter(Boolean))];
+  const idsNeeded = [...new Set(slice.map((r) => r.userId).filter(Boolean))];
   if (viewerUserId) idsNeeded.push(viewerUserId);
   const uniq = [...new Set(idsNeeded)];
 
@@ -117,7 +185,8 @@ export async function fetchPublicFeed(viewerUserId, tagFilter) {
   const shimUsers = userRows.map(userRowToShim);
 
   const shimDb = { users: shimUsers, posts: legacy };
-  return buildFeed(shimDb, viewerUserId, { tagFilter });
+  const built = buildFeed(shimDb, viewerUserId, { tagFilter: tagFilter && tagFilter !== "All" ? tagFilter : null });
+  return { ...built, nextCursor };
 }
 
 export async function resolveViewerFromSession(token) {
@@ -435,6 +504,10 @@ export async function listCommentsEnvelope(postId) {
 export async function addCommentEnvelope(postId, viewerUserId, text, imageUrl = "", parentIdRaw = null) {
   const db = await getDb();
 
+  const bodyText = String(text || "").trim();
+  if (!bodyText) return { empty: true };
+  if (bodyText.length > CCS_COMMENT_BODY_MAX_CHARS) return { tooLong: true };
+
   const [postRow] = await db.select().from(schema.ccsPosts).where(eq(schema.ccsPosts.id, postId)).limit(1);
   if (!postRow) return { missing: true };
 
@@ -462,7 +535,7 @@ export async function addCommentEnvelope(postId, viewerUserId, text, imageUrl = 
     postId,
     userId: viewerUserId,
     parentId: resolvedParentId,
-    body: text,
+    body: bodyText,
     imageUrl: clampedImage,
     createdAt,
   });
@@ -483,10 +556,60 @@ export async function addCommentEnvelope(postId, viewerUserId, text, imageUrl = 
   const users = authorProfilesByIds({ users: shimUsers, posts: [] }, ids);
 
   return {
-    comment: { id, userId: viewerUserId, text, ts: createdAt, imageUrl: clampedImage, parentId: resolvedParentId },
+    comment: { id, userId: viewerUserId, text: bodyText, ts: createdAt, imageUrl: clampedImage, parentId: resolvedParentId },
     post: postCard,
     users,
   };
+}
+
+export async function updateCommentEnvelope(postId, commentId, viewerUserId, text) {
+  const db = await getDb();
+  const bodyText = String(text || "").trim();
+  if (!bodyText) return { empty: true };
+  if (bodyText.length > CCS_COMMENT_BODY_MAX_CHARS) return { tooLong: true };
+
+  const [row] = await db
+    .select()
+    .from(schema.ccsComments)
+    .where(and(eq(schema.ccsComments.id, commentId), eq(schema.ccsComments.postId, postId)))
+    .limit(1);
+  if (!row) return { missing: true };
+  if (row.userId !== viewerUserId) return { forbidden: true };
+
+  await db.update(schema.ccsComments).set({ body: bodyText }).where(eq(schema.ccsComments.id, commentId));
+
+  return {
+    comment: {
+      id: row.id,
+      userId: row.userId,
+      text: bodyText,
+      ts: row.createdAt,
+      imageUrl: row.imageUrl || "",
+      parentId: row.parentId && String(row.parentId).trim() ? String(row.parentId).trim() : null,
+    },
+  };
+}
+
+export async function deleteCommentEnvelope(postId, commentId, viewerUserId) {
+  const db = await getDb();
+  const [postRow] = await db.select().from(schema.ccsPosts).where(eq(schema.ccsPosts.id, postId)).limit(1);
+  if (!postRow) return { missingPost: true };
+
+  const [row] = await db
+    .select()
+    .from(schema.ccsComments)
+    .where(and(eq(schema.ccsComments.id, commentId), eq(schema.ccsComments.postId, postId)))
+    .limit(1);
+  if (!row) return { missing: true };
+  if (row.userId !== viewerUserId) return { forbidden: true };
+
+  await db.delete(schema.ccsComments).where(eq(schema.ccsComments.id, commentId));
+
+  const nextCount = Math.max(0, Number(postRow.commentCount ?? 0) - 1);
+  await db.update(schema.ccsPosts).set({ commentCount: nextCount }).where(eq(schema.ccsPosts.id, postId));
+
+  const postCard = await clientPostPreview(viewerUserId, postId);
+  return { ok: true, post: postCard };
 }
 
 const PROFILE_KEYS = new Set([
@@ -565,7 +688,25 @@ export async function getAccountWire(token) {
   const db = await getDb();
   const [row] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, viewer.id)).limit(1);
   if (!row) return null;
-  return accountWireFromRow(row);
+  const wire = accountWireFromRow(row);
+  wire.friends = await friendsWireFromDb(db, row);
+  return wire;
+}
+
+/** Merge Postgres friend-request rows into the client friends envelope (truth for pending/outgoing). */
+async function friendsWireFromDb(db, userRow) {
+  const uid = userRow.id;
+  const base = normalizeFriends(userRow.friendsState);
+  const outbound = await db.select({ toUserId: schema.ccsFriendRequests.toUserId }).from(schema.ccsFriendRequests).where(eq(schema.ccsFriendRequests.fromUserId, uid));
+  const inbound = await db
+    .select({ fromUserId: schema.ccsFriendRequests.fromUserId })
+    .from(schema.ccsFriendRequests)
+    .where(eq(schema.ccsFriendRequests.toUserId, uid));
+  return normalizeFriends({
+    friends: [...new Set(base.friends.filter(Boolean))],
+    pending: [...new Set(inbound.map((r) => String(r.fromUserId)).filter(Boolean))],
+    outgoing: [...new Set(outbound.map((r) => String(r.toUserId)).filter(Boolean))],
+  });
 }
 
 /** Resolve a user id from their public handle (case-insensitive, trimmed). */
@@ -703,9 +844,7 @@ export async function patchAccountBundles(userId, body) {
   let nextActs = currActivities;
 
   if (body.prefs !== undefined && typeof body.prefs === "object") nextPrefs = normalizePrefs({ ...currPrefs, ...body.prefs });
-  if (body.friends !== undefined && typeof body.friends === "object") {
-    nextFriends = normalizeFriends({ ...currFriends, ...body.friends });
-  }
+  /** Friends pending/outgoing are managed via `/api/friends`; mutual list updates there (not via generic PATCH). */
   if (body.subs !== undefined && typeof body.subs === "object") {
     nextSubs = normalizeSubs({ ...currSubs, ...body.subs });
   }
@@ -829,4 +968,238 @@ export async function presenceReadmany(ids, viewerId) {
   }
 
   return out;
+}
+
+export async function createUserReport(reporterUserId, postId, reasonRaw) {
+  const db = await getDb();
+  const postIdStr = String(postId || "").trim();
+  const reason = String(reasonRaw ?? "Reported").trim().slice(0, 500) || "Reported";
+  if (!postIdStr) return { badRequest: true };
+  const [postHit] = await db.select({ id: schema.ccsPosts.id }).from(schema.ccsPosts).where(eq(schema.ccsPosts.id, postIdStr)).limit(1);
+  if (!postHit) return { missing: true };
+  const [dup] = await db
+    .select({ id: schema.ccsReports.id })
+    .from(schema.ccsReports)
+    .where(
+      and(
+        eq(schema.ccsReports.postId, postIdStr),
+        eq(schema.ccsReports.reporterUserId, reporterUserId),
+        eq(schema.ccsReports.status, "open")
+      )
+    )
+    .limit(1);
+  if (dup) return { duplicate: true };
+  const id = `rep_${randomUUID()}`;
+  await db.insert(schema.ccsReports).values({
+    id,
+    postId: postIdStr,
+    reporterUserId,
+    reason,
+    status: "open",
+    createdAt: Date.now(),
+    resolvedByUserId: "",
+    resolvedAt: null,
+  });
+  return { ok: true, reportId: id };
+}
+
+async function mutualRemoveFriendLinks(db, aId, bId) {
+  const [ra, rb] = await Promise.all([
+    db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, aId)).limit(1),
+    db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, bId)).limit(1),
+  ]);
+  const rowA = ra[0];
+  const rowB = rb[0];
+  if (!rowA || !rowB) return { missing: true };
+  const fa = normalizeFriends(rowA.friendsState);
+  const fb = normalizeFriends(rowB.friendsState);
+  fa.friends = fa.friends.filter((x) => String(x) !== String(bId));
+  fb.friends = fb.friends.filter((x) => String(x) !== String(aId));
+  fa.pending = fa.pending.filter((x) => String(x) !== String(bId));
+  fb.pending = fb.pending.filter((x) => String(x) !== String(aId));
+  fa.outgoing = fa.outgoing.filter((x) => String(x) !== String(bId));
+  fb.outgoing = fb.outgoing.filter((x) => String(x) !== String(aId));
+  await db.update(schema.ccsUsers).set({ friendsState: fa }).where(eq(schema.ccsUsers.id, aId));
+  await db.update(schema.ccsUsers).set({ friendsState: fb }).where(eq(schema.ccsUsers.id, bId));
+  return { ok: true };
+}
+
+async function mutualAddFriends(db, aId, bId) {
+  const [ra, rb] = await Promise.all([
+    db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, aId)).limit(1),
+    db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, bId)).limit(1),
+  ]);
+  const rowA = ra[0];
+  const rowB = rb[0];
+  if (!rowA || !rowB) return { missing: true };
+  const fa = normalizeFriends(rowA.friendsState);
+  const fb = normalizeFriends(rowB.friendsState);
+  const fidA = [...new Set([...fa.friends.map(String).filter(Boolean), String(bId)])];
+  const fidB = [...new Set([...fb.friends.map(String).filter(Boolean), String(aId)])];
+  fa.friends = fidA;
+  fb.friends = fidB;
+  fa.pending = fa.pending.filter((x) => String(x) !== String(bId));
+  fa.outgoing = fa.outgoing.filter((x) => String(x) !== String(bId));
+  fb.pending = fb.pending.filter((x) => String(x) !== String(aId));
+  fb.outgoing = fb.outgoing.filter((x) => String(x) !== String(aId));
+  await db.update(schema.ccsUsers).set({ friendsState: fa }).where(eq(schema.ccsUsers.id, aId));
+  await db.update(schema.ccsUsers).set({ friendsState: fb }).where(eq(schema.ccsUsers.id, bId));
+  return { ok: true };
+}
+
+/**
+ * Unified friend mutations (authenticated). Server updates request rows + mutual friend lists where needed.
+ * @returns {Promise<{ error?: string, wire?: ReturnType<accountWireFromRow> & { friends?: unknown } }>}
+ */
+export async function friendPerformAction(viewerId, body) {
+  const db = await getDb();
+  const action = String(body?.action || "").trim().toLowerCase();
+
+  async function refreshedWire(uid) {
+    const [row] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, uid)).limit(1);
+    if (!row) return { error: "missing_user" };
+    const w = accountWireFromRow(row);
+    w.friends = await friendsWireFromDb(db, row);
+    return { wire: w };
+  }
+
+  if (!viewerId || !body || typeof body !== "object") return { error: "bad_request" };
+
+  if (action === "request") {
+    const toUserId = String(body.toUserId || "").trim();
+    if (!toUserId || toUserId === viewerId) return { error: "invalid_target" };
+    const [vrow] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, viewerId)).limit(1);
+    if (!vrow) return { error: "missing_user" };
+    const vf = normalizeFriends(vrow.friendsState);
+    if (vf.friends.some((x) => String(x) === toUserId)) return { error: "already_friends" };
+    try {
+      const id = `fr_${randomUUID()}`;
+      await db.insert(schema.ccsFriendRequests).values({ id, fromUserId: viewerId, toUserId, createdAt: Date.now() });
+    } catch (e) {
+      if (isUniqueViolation(e)) return { error: "pending_or_exists" };
+      throw e;
+    }
+    return refreshedWire(viewerId);
+  }
+
+  if (action === "accept") {
+    const fromUserId = String(body.fromUserId || "").trim();
+    if (!fromUserId || fromUserId === viewerId) return { error: "invalid_target" };
+    await db.delete(schema.ccsFriendRequests).where(and(eq(schema.ccsFriendRequests.fromUserId, fromUserId), eq(schema.ccsFriendRequests.toUserId, viewerId)));
+    const m = await mutualAddFriends(db, viewerId, fromUserId);
+    if (m.missing) return { error: "missing_user" };
+    return refreshedWire(viewerId);
+  }
+
+  if (action === "decline") {
+    const fromUserId = String(body.fromUserId || "").trim();
+    if (!fromUserId) return { error: "invalid_target" };
+    await db.delete(schema.ccsFriendRequests).where(and(eq(schema.ccsFriendRequests.fromUserId, fromUserId), eq(schema.ccsFriendRequests.toUserId, viewerId)));
+    return refreshedWire(viewerId);
+  }
+
+  if (action === "cancel") {
+    const toUserId = String(body.toUserId || "").trim();
+    if (!toUserId) return { error: "invalid_target" };
+    await db.delete(schema.ccsFriendRequests).where(and(eq(schema.ccsFriendRequests.fromUserId, viewerId), eq(schema.ccsFriendRequests.toUserId, toUserId)));
+    return refreshedWire(viewerId);
+  }
+
+  if (action === "remove") {
+    const userId = String(body.userId || "").trim();
+    if (!userId || userId === viewerId) return { error: "invalid_target" };
+    await db.delete(schema.ccsFriendRequests).where(
+      or(
+        and(eq(schema.ccsFriendRequests.fromUserId, viewerId), eq(schema.ccsFriendRequests.toUserId, userId)),
+        and(eq(schema.ccsFriendRequests.fromUserId, userId), eq(schema.ccsFriendRequests.toUserId, viewerId))
+      )
+    );
+    const m = await mutualRemoveFriendLinks(db, viewerId, userId);
+    if (m.missing) return { error: "missing_user" };
+    return refreshedWire(viewerId);
+  }
+
+  return { error: "unknown_action" };
+}
+
+const SEARCH_LIMIT_DEFAULT = 30;
+const SEARCH_LIMIT_MAX = 80;
+
+async function matchingUserIdsForSearch(db, qRaw) {
+  const needle = String(qRaw || "").trim().toLowerCase().replace(/[%_]/g, "").slice(0, 64);
+  if (needle.length < 2) return [];
+  const rows = await db.select({ id: schema.ccsUsers.id, profile: schema.ccsUsers.profile }).from(schema.ccsUsers).limit(2000);
+  const out = [];
+  for (const r of rows) {
+    const prof = typeof r.profile === "object" && r.profile ? r.profile : {};
+    const h = String(prof.handle || "").trim().toLowerCase();
+    const nm = String(prof.name || "").trim().toLowerCase();
+    if (!h.includes(needle) && !nm.includes(needle)) continue;
+    out.push(r.id);
+    if (out.length >= 48) break;
+  }
+  return out;
+}
+
+export async function searchForumPostsEnvelope(viewerUserId, opts = {}) {
+  const db = await getDb();
+  await purgeExpiredSessions(db);
+
+  let limit = Number(opts.limit);
+  if (!Number.isFinite(limit) || limit < 1) limit = SEARCH_LIMIT_DEFAULT;
+  if (limit > SEARCH_LIMIT_MAX) limit = SEARCH_LIMIT_MAX;
+
+  const qRaw = String(opts.q || "").trim();
+  const qq = qRaw.slice(0, 200);
+  const tag =
+    opts.tag && String(opts.tag).trim() && String(opts.tag).trim() !== "All" ? String(opts.tag).trim() : "";
+
+  let userMatchIds = qq.length >= 2 ? await matchingUserIdsForSearch(db, qq) : [];
+  /** Drop viewer from author filter clutter */
+  userMatchIds = userMatchIds.filter((id) => id !== viewerUserId).slice(0, 48);
+
+  const escaped = `%${qq.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_")}%`;
+
+  const cursor = decodeFeedCursor(opts.cursor);
+
+  const parts = [];
+  if (tag) parts.push(eq(schema.ccsPosts.tag, tag));
+
+  if (qq.length >= 2) {
+    const orClauses = [ilike(schema.ccsPosts.content, escaped, "\\")];
+    if (userMatchIds.length) orClauses.push(inArray(schema.ccsPosts.userId, userMatchIds));
+    parts.push(or(...orClauses));
+  }
+  /** Empty query → no restriction would return everything; require at least tag or text. */
+  if (!tag && qq.length < 2) return { posts: [], users: {}, nextCursor: null };
+
+  if (cursor) {
+    parts.push(
+      or(
+        lt(schema.ccsPosts.createdAt, cursor.createdAt),
+        and(eq(schema.ccsPosts.createdAt, cursor.createdAt), lt(schema.ccsPosts.id, cursor.id))
+      )
+    );
+  }
+
+  let q = db.select().from(schema.ccsPosts);
+  if (parts.length === 1) q = q.where(parts[0]);
+  else if (parts.length > 1) q = q.where(and(...parts));
+
+  const rows = await q.orderBy(desc(schema.ccsPosts.createdAt), desc(schema.ccsPosts.id)).limit(limit + 1);
+  const hasMore = rows.length > limit;
+  const slice = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore && slice.length ? encodeFeedCursor(slice[slice.length - 1]) : null;
+
+  const legacy = slice.map(postRowToLegacy);
+  await enrichLegacyPostsOpenReportCounts(db, legacy);
+
+  const idsNeeded = [...new Set(slice.map((r) => r.userId).filter(Boolean))];
+  if (viewerUserId) idsNeeded.push(viewerUserId);
+  const uniq = [...new Set(idsNeeded)];
+  const userRows = uniq.length === 0 ? [] : await db.select().from(schema.ccsUsers).where(inArray(schema.ccsUsers.id, uniq));
+  const shimUsers = userRows.map(userRowToShim);
+  const shimDb = { users: shimUsers, posts: legacy };
+  const built = buildFeed(shimDb, viewerUserId, {});
+  return { ...built, nextCursor };
 }

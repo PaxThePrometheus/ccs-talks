@@ -46,7 +46,7 @@ export const APP_CONFIG = {
     tickets: { title: "Tickets" },
     profile: { title: "Profile" },
     timeline: { title: "My timeline" },
-    activities: { title: "Activities" },
+    activities: { title: "Your activity" },
     search: { title: "Search" },
     bookmarks: { title: "Bookmarks" },
     friends: { title: "Friends" },

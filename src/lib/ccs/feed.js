@@ -49,6 +49,8 @@ export function buildFeed(db, viewerUserId = null, { tagFilter = null } = {}) {
     pinned: !!p.pinned,
     createdAt: p.createdAt,
     likedByMe: !!(viewer && Array.isArray(p.likedBy) && p.likedBy.includes(viewer.id)),
+    openReportCount:
+      typeof p.openReportCount === "number" && Number.isFinite(p.openReportCount) ? p.openReportCount : 0,
   }));
 
   return { posts: clientPosts, users: authors };

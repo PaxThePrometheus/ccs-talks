@@ -201,15 +201,213 @@ function fmtDuration(totalSec) {
   return `${sec}s`;
 }
 
-function OpsCard({ title, lines }) {
+/** Ring buffer snapshots for realtime charts ({ ts, totals, ops }) */
+const OVERVIEW_POLL_MS = 14_000;
+const OVERVIEW_HISTORY = 72;
+
+/** Short tooltip copy for admins (also as native fallback `title`). */
+const STAT_HELP = {
+  users: "Registered accounts in ccs_users. Includes students, moderators, and admins.",
+  admins: 'Accounts whose role is "admin". They can manage site settings and delete users.',
+  moderators: "Accounts that can moderate content, edit profiles, tickets, announcements (per your rules).",
+  banned: 'Users flagged with banned=true. They cannot sign in until staff clears the ban.',
+  posts: 'Published forum threads stored in ccs_posts (includes pinned and image posts).',
+  comments: 'All comments across posts in ccs_comments.',
+};
+
+const OPS_HELP = {
+  runtime:
+    "The Node.js process answering this Admin request. PID and uptime reset on cold starts (common on serverless hosts). Useful to spot frequent recycling.",
+  memory:
+    "This serverless instance RSS and V8 heap. Spikes usually mean heavy traffic or a memory leak — compare over time.",
+  postgres:
+    "Database footprint and rough text payload sizes. Relation total excludes indexes in some Postgres versions.",
+  sessions:
+    "Login sessions rows and moderator-facing ticket/announcement counters. Audit log grows with every audited staff action.",
+  rss: "Resident Set Size — total RAM the OS has assigned this process.",
+  heap: "JavaScript heap used by Node / V8. Compare to heapTotal for pressure.",
+  dbsize: "pg_database_size — total bytes for the connected database.",
+  relations: 'Sum of pg_total_relation_size for base tables/materialized views in schema "public".',
+  sessionsActive: 'Session rows whose expires_at is still in the future (users remain signed in until cookie expiry).',
+  auditRows: 'Total rows in ccs_audit_log — grows with moderator/admin actions logged to audit.',
+};
+
+function OpsCard({ title, titleTip, lines, below }) {
   return (
-    <div style={{ borderRadius: 12, border: `1px solid ${t.border}`, padding: "10px 12px", background: "rgba(0,0,0,0.22)" }}>
-      <div style={{ fontWeight: 900, fontSize: 12, letterSpacing: "0.06em", color: t.muted }}>{title}</div>
+    <div style={{ borderRadius: 12, border: `1px solid ${t.border}`, padding: "10px 12px", background: "rgba(0,0,0,0.22)", display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+      <OverviewHoverTip tip={titleTip}>
+        <div style={{ fontWeight: 900, fontSize: 12, letterSpacing: "0.06em", color: t.muted, cursor: "help", borderBottom: `1px dashed ${t.border}`, width: "fit-content" }}>
+          {title}
+        </div>
+      </OverviewHoverTip>
       {lines.map((ln, i) => (
-        <div key={i} style={{ marginTop: 6, color: t.text, fontSize: 13 }}>
+        <div key={i} style={{ marginTop: 0, color: t.text, fontSize: 13 }}>
           {ln}
         </div>
       ))}
+      {below}
+    </div>
+  );
+}
+
+function OverviewHoverTip({ tip, children }) {
+  const [open, setOpen] = useState(false);
+  if (!tip) return children;
+
+  return (
+    <span
+      style={{ position: "relative", display: "inline-flex", verticalAlign: "middle" }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onFocus={() => setOpen(true)}
+      onBlur={() => setOpen(false)}
+      tabIndex={0}
+    >
+      {children}
+      {open ? (
+        <span
+          role="tooltip"
+          style={{
+            position: "absolute",
+            zIndex: 50,
+            left: 0,
+            bottom: "calc(100% + 10px)",
+            minWidth: 200,
+            maxWidth: minVwPx(288),
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: `1px solid ${t.borderStrong}`,
+            background: "rgba(14,0,8,0.97)",
+            color: t.text,
+            fontSize: 12,
+            lineHeight: 1.45,
+            fontWeight: 500,
+            boxShadow: "0 14px 40px rgba(0,0,0,0.45)",
+          }}
+        >
+          {tip}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function minVwPx(px) {
+  if (typeof window === "undefined") return `${Math.min(px, 320)}px`;
+  return `${Math.min(px, Math.floor(window.innerWidth * 0.88))}px`;
+}
+
+/** Normalized area + line SVG (responsive). */
+function SparklineSvg({ values, strokeColor, fillColor = "rgba(255,96,128,0.14)", height = 54 }) {
+  let arr = Array.isArray(values) ? values.filter((v) => typeof v === "number" && Number.isFinite(v)) : [];
+  if (arr.length === 1) arr = [arr[0], arr[0]];
+  if (arr.length < 2) {
+    return (
+      <div style={{ height, borderRadius: 8, border: `1px dashed ${t.border}`, display: "flex", alignItems: "center", justifyContent: "center", color: t.muted, fontSize: 11, marginTop: 4 }}>
+        Collecting samples…
+      </div>
+    );
+  }
+
+  const W = 220;
+  const H = height;
+  const pad = 2;
+  const min = Math.min(...arr),
+    max = Math.max(...arr);
+  const range = Math.max(max - min, 1e-9);
+
+  const toY = (v) => H - pad - ((v - min) / range) * (H - pad * 2);
+  let d = "";
+  arr.forEach((v, i) => {
+    const x = pad + (i / (arr.length - 1)) * (W - pad * 2);
+    const y = toY(v);
+    d += i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
+  });
+  const y0 = H - pad;
+  const pathFill = `${d} L ${W - pad} ${y0} L ${pad} ${y0} Z`;
+
+  return (
+    <svg
+      width="100%"
+      height={H}
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      style={{ display: "block", marginTop: 6, overflow: "visible" }}
+      aria-hidden
+    >
+      <path d={pathFill} fill={fillColor} stroke="none" />
+      <path d={d} fill="none" stroke={strokeColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      <circle cx={W - pad} cy={toY(arr[arr.length - 1])} r={3.5} fill={strokeColor} opacity={0.95} vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+function HorizontalBarPairs({ pairs, captionTip }) {
+  const maxVal = Math.max(1, ...pairs.map((p) => Number(p.value) || 0));
+  return (
+    <OverviewHoverTip tip={captionTip}>
+      <div style={{ marginTop: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.06em", color: t.muted, marginBottom: 6, cursor: "help" }}>Shares (live mix)</div>
+        {pairs.map((p) => (
+          <div key={p.key} style={{ marginBottom: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: t.muted }}>
+              <span>{p.label}</span>
+              <span>{typeof p.fmt === "function" ? p.fmt(p.value) : String(p.value)}</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 4, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+              <div style={{ width: `${(Number(p.value) / maxVal) * 100}%`, height: "100%", background: p.barColor || `linear-gradient(90deg, ${t.accent}, ${t.good})`, borderRadius: 4 }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </OverviewHoverTip>
+  );
+}
+
+function extractHistorySeries(history, pick) {
+  return history.map(pick).filter((v) => typeof v === "number" && Number.isFinite(v));
+}
+
+function colorAlpha(cssColor, a) {
+  const s = String(cssColor ?? "").trim();
+  const hm = /^#?([0-9a-f]{6})$/i.exec(s);
+  if (hm) {
+    const n = parseInt(hm[1], 16);
+    const r = (n >> 16) & 255,
+      g = (n >> 8) & 255,
+      b = n & 255;
+    return `rgba(${r},${g},${b},${a})`;
+  }
+  const rm = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(s);
+  if (rm) return `rgba(${rm[1]},${rm[2]},${rm[3]},${a})`;
+  return `rgba(255,96,128,${a})`;
+}
+
+function StatCard({ title, tip, value, accent, tone, spark, accentColor }) {
+  const valueColor = accent ? t.accent : tone === "warn" ? t.warn : tone === "muted" ? t.muted : t.textStrong;
+  const stroke = accentColor || valueColor;
+  const fill = colorAlpha(stroke, 0.14);
+  return (
+    <div style={{ borderRadius: 16, border: `1px solid ${t.border}`, background: t.surface, backdropFilter: "blur(12px)", padding: "12px 14px 10px", display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <OverviewHoverTip tip={tip}>
+        <div
+          style={{
+            color: t.muted,
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            cursor: "help",
+            borderBottom: `1px dashed ${t.border}`,
+            width: "fit-content",
+          }}
+          title={tip}
+        >
+          {title}
+        </div>
+      </OverviewHoverTip>
+      <div style={{ color: valueColor, fontSize: 28, fontWeight: 950, marginTop: 4, lineHeight: 1.1 }}>{Number(value).toLocaleString()}</div>
+      <SparklineSvg values={spark} strokeColor={stroke} fillColor={fill} height={44} />
     </div>
   );
 }
@@ -217,55 +415,211 @@ function OpsCard({ title, lines }) {
 /** ---------- overview ---------- */
 function OverviewPane({ onError }) {
   const [data, setData] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [lastRefresh, setLastRefresh] = useState(null);
+  const [pollError, setPollError] = useState(null);
+
+  const fetchOverview = useCallback(async () => {
+    try {
+      const d = await jsonFetch("/api/admin/overview");
+      setData(d);
+      setLastRefresh(Date.now());
+      setPollError(null);
+
+      const snap = {
+        ts: Date.now(),
+        totals: d.totals,
+        ops: d.ops && typeof d.ops === "object" && !d.ops.error ? d.ops : null,
+      };
+
+      setHistory((h) => {
+        const next = [...h, snap];
+        if (next.length > OVERVIEW_HISTORY) return next.slice(-OVERVIEW_HISTORY);
+        return next;
+      });
+    } catch (e) {
+      setPollError(e?.message || "Refresh failed.");
+      if (e?.status === 401) onError(e);
+    }
+  }, [onError]);
 
   useEffect(() => {
-    let cancel = false;
-    jsonFetch("/api/admin/overview")
-      .then((d) => !cancel && setData(d))
-      .catch(onError);
-    return () => { cancel = true; };
-  }, [onError]);
+    let cancelled = false;
+    const run = async () => {
+      if (!cancelled) await fetchOverview();
+    };
+    void run();
+
+    const id = window.setInterval(() => {
+      void fetchOverview();
+    }, OVERVIEW_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [fetchOverview]);
 
   if (!data) return <Skeleton />;
 
   const ops = data.ops && typeof data.ops === "object" && !data.ops.error ? data.ops : null;
 
+  const sUsers = extractHistorySeries(history, (s) => s.totals?.users);
+  const sAdmins = extractHistorySeries(history, (s) => s.totals?.admins);
+  const sMods = extractHistorySeries(history, (s) => s.totals?.moderators);
+  const sBanned = extractHistorySeries(history, (s) => s.totals?.banned);
+  const sPosts = extractHistorySeries(history, (s) => s.totals?.posts);
+  const sComments = extractHistorySeries(history, (s) => s.totals?.comments);
+  const sRss = extractHistorySeries(history, (s) => s.ops?.server?.memory?.rss);
+  const sHeap = extractHistorySeries(history, (s) => s.ops?.server?.memory?.heapUsed);
+  const sDbSz = extractHistorySeries(history, (s) => s.ops?.storage?.databaseSizeBytes);
+  const sSessActive = extractHistorySeries(history, (s) => s.ops?.database?.activeSessions);
+  const sAudit = extractHistorySeries(history, (s) => s.ops?.database?.auditLogRows);
+
   return (
     <>
-      <div style={statGrid}>
-        <Stat k="Users" v={data.totals.users} />
-        <Stat k="Admins" v={data.totals.admins} accent />
-        <Stat k="Moderators" v={data.totals.moderators} />
-        <Stat k="Banned" v={data.totals.banned} tone={data.totals.banned > 0 ? "warn" : "muted"} />
-        <Stat k="Posts" v={data.totals.posts} />
-        <Stat k="Comments" v={data.totals.comments} />
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span
+            aria-hidden="true"
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: 999,
+              background: `radial-gradient(circle at 30% 30%, ${t.good}, rgba(120,224,160,0.25))`,
+              boxShadow: `0 0 10px rgba(123,224,160,0.45)`,
+            }}
+          />
+          <span style={{ fontSize: 12, fontWeight: 800, color: t.textStrong }}>Live dashboards</span>
+          <OverviewHoverTip tip="Numbers refresh on a timer from this workstation to /api/admin/overview. Charts need a few polls to shape a trend; serverless spikes are normal between cold starts.">
+            <span style={{ cursor: "help", borderBottom: `1px dashed ${t.border}`, fontSize: 12, color: t.muted }}>How realtime works?</span>
+          </OverviewHoverTip>
+        </div>
+        <div style={{ fontSize: 11, color: t.muted, textAlign: "right" }}>
+          Poll every {(OVERVIEW_POLL_MS / 1000).toFixed(0)}s
+          <br />
+          Last update: {lastRefresh ? new Date(lastRefresh).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}
+          {pollError ? <span style={{ color: t.bad, marginLeft: 8 }}>{pollError}</span> : null}
+        </div>
       </div>
+
+      <div style={statGrid}>
+        <StatCard title="Users" tip={STAT_HELP.users} value={data.totals.users} accentColor={t.accent} spark={sUsers} />
+        <StatCard title="Admins" tip={STAT_HELP.admins} value={data.totals.admins} accent accentColor={t.good} spark={sAdmins} />
+        <StatCard title="Moderators" tip={STAT_HELP.moderators} value={data.totals.moderators} accentColor="#ffb05a" spark={sMods} />
+        <StatCard
+          title="Banned"
+          tip={STAT_HELP.banned}
+          value={data.totals.banned}
+          tone={data.totals.banned > 0 ? "warn" : "muted"}
+          accentColor={t.bad}
+          spark={sBanned}
+        />
+        <StatCard title="Posts" tip={STAT_HELP.posts} value={data.totals.posts} accentColor="#ff6090" spark={sPosts} />
+        <StatCard title="Comments" tip={STAT_HELP.comments} value={data.totals.comments} accentColor="#b87aff" spark={sComments} />
+      </div>
+
+      {history.length >= 2 ? (
+        <section style={{ ...panel, marginTop: 10 }}>
+          <header style={panelHeader}>
+            <OverviewHoverTip tip="Each line mixes the same snapshots as above. Hover card titles elsewhere for glossary text. Useful to correlate activity with memory drift.">
+              <span style={{ cursor: "help", borderBottom: `1px dashed ${t.border}` }}>Realtime trends</span>
+            </OverviewHoverTip>
+          </header>
+          <div style={{ padding: "12px 16px 14px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
+            <div>
+              <OverviewHoverTip tip="Community totals from the overview payload: users, posts, comments over time — watch for bursts after campaigns or scraping.">
+                <div style={{ fontSize: 11, fontWeight: 900, color: t.muted, marginBottom: 4, cursor: "help", width: "fit-content", borderBottom: `1px dashed ${t.border}` }}>Forum volume</div>
+              </OverviewHoverTip>
+              <SparklineSvg values={sUsers} strokeColor={t.accent} />
+              <div style={{ fontSize: 10, color: t.muted }}>Users</div>
+              <SparklineSvg values={sPosts} strokeColor="#ff6090" fillColor="rgba(255,96,144,0.12)" />
+              <div style={{ fontSize: 10, color: t.muted }}>Posts</div>
+              <SparklineSvg values={sComments} strokeColor="#b87aff" fillColor="rgba(184,122,255,0.14)" />
+              <div style={{ fontSize: 10, color: t.muted }}>Comments</div>
+            </div>
+            <div>
+              <OverviewHoverTip tip={OPS_HELP.memory}>
+                <div style={{ fontSize: 11, fontWeight: 900, color: t.muted, marginBottom: 4, cursor: "help", width: "fit-content", borderBottom: `1px dashed ${t.border}` }}>Memory</div>
+              </OverviewHoverTip>
+              <SparklineSvg values={sRss} strokeColor={t.good} fillColor="rgba(123,224,160,0.14)" />
+              <div style={{ fontSize: 10, color: t.muted }} title={OPS_HELP.rss}>{OPS_HELP.rss}</div>
+              <SparklineSvg values={sHeap} strokeColor={t.warn} fillColor="rgba(255,176,90,0.12)" />
+              <div style={{ fontSize: 10, color: t.muted }} title={OPS_HELP.heap}>{OPS_HELP.heap}</div>
+            </div>
+            <div>
+              <OverviewHoverTip tip="Database + operational counts: storage changes slowly unless bulk imports or vacuum; sessions jump with logins; audit climbs with moderator actions.">
+                <div style={{ fontSize: 11, fontWeight: 900, color: t.muted, marginBottom: 4, cursor: "help", width: "fit-content", borderBottom: `1px dashed ${t.border}` }}>Platform</div>
+              </OverviewHoverTip>
+              <SparklineSvg values={sDbSz} strokeColor="#6ec8ff" fillColor="rgba(110,200,255,0.14)" />
+              <div style={{ fontSize: 10, color: t.muted }} title={OPS_HELP.dbsize}>{OPS_HELP.dbsize}</div>
+              <SparklineSvg values={sSessActive} strokeColor="#ffa6c9" fillColor="rgba(255,166,201,0.12)" />
+              <div style={{ fontSize: 10, color: t.muted }} title={OPS_HELP.sessionsActive}>{OPS_HELP.sessionsActive}</div>
+              <SparklineSvg values={sAudit} strokeColor="#c4b088" fillColor="rgba(196,176,136,0.12)" />
+              <div style={{ fontSize: 10, color: t.muted }} title={OPS_HELP.auditRows}>{OPS_HELP.auditRows}</div>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {ops ? (
         <section style={panel}>
-          <header style={panelHeader}>Server &amp; storage (snapshot)</header>
+          <header style={{ ...panelHeader, gap: 10 }}>
+            <span>
+              Server &amp; storage
+              <OverviewHoverTip tip="Each poll runs SQL size queries and aggregates. Values can differ slightly between Neon compute instances; spikes during deploys are expected.">
+                <span style={{ marginLeft: 8, opacity: 0.75, cursor: "help", fontSize: 11, fontWeight: 800 }}>(?)</span>
+              </OverviewHoverTip>
+            </span>
+          </header>
           <div style={{ padding: "12px 16px 16px", display: "flex", flexDirection: "column", gap: 12, fontSize: 13, color: t.text }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-              <OpsCard title="Runtime" lines={[`Node ${ops.server.node}`, `${ops.server.platform} · pid ${ops.server.pid}`, `Uptime ${fmtDuration(ops.server.uptimeSeconds)}`, `TZ ${ops.server.timeZone || "—"}`]} />
+              <OpsCard
+                title="Runtime"
+                titleTip={OPS_HELP.runtime}
+                lines={[`Node ${ops.server.node}`, `${ops.server.platform} · pid ${ops.server.pid}`, `Uptime ${fmtDuration(ops.server.uptimeSeconds)}`, `TZ ${ops.server.timeZone || "—"}`]}
+                below={
+                  <SparklineSvg
+                    values={extractHistorySeries(history, (s) => s.ops?.server?.uptimeSeconds)}
+                    strokeColor="#8899aa"
+                    fillColor="rgba(136,153,170,0.12)"
+                  />
+                }
+              />
               <OpsCard
                 title="Memory (process)"
+                titleTip={OPS_HELP.memory}
                 lines={[
                   `RSS ${formatBytes(ops.server.memory.rss)}`,
                   `Heap used ${formatBytes(ops.server.memory.heapUsed)} / ${formatBytes(ops.server.memory.heapTotal)}`,
                   `External ${formatBytes(ops.server.memory.external)}`,
                 ]}
+                below={
+                  <>
+                    <SparklineSvg values={sRss} strokeColor={t.good} fillColor="rgba(123,224,160,0.12)" />
+                    <SparklineSvg values={sHeap} strokeColor={t.warn} />
+                  </>
+                }
               />
               <OpsCard
                 title="Postgres"
+                titleTip={OPS_HELP.postgres}
                 lines={[
                   `DB size ${formatBytes(ops.storage.databaseSizeBytes)}`,
                   `Tables (relation total) ${formatBytes(ops.storage.relationStorageBytes)}`,
                   `Posts text ≈ ${formatBytes(ops.storage.postsTextBytes)}`,
                   `Comments text ≈ ${formatBytes(ops.storage.commentsTextBytes)}`,
                 ]}
+                below={
+                  <>
+                    <SparklineSvg values={extractHistorySeries(history, (s) => s.ops?.storage?.relationStorageBytes)} strokeColor="#6ec8ff" />
+                    <div style={{ fontSize: 10, color: t.muted }} title={OPS_HELP.relations}>{OPS_HELP.relations}</div>
+                  </>
+                }
               />
               <OpsCard
-                title="Rows &amp; sessions"
+                title="Rows & sessions"
+                titleTip={OPS_HELP.sessions}
                 lines={[
                   `Sessions (all) ${ops.database.sessionsTotal}`,
                   `Sessions (unexpired) ${ops.database.activeSessions}`,
@@ -273,10 +627,32 @@ function OverviewPane({ onError }) {
                   `Tickets ${ops.database.tickets} (${ops.database.ticketsOpen} open)`,
                   `Audit log rows ${ops.database.auditLogRows}`,
                 ]}
+                below={
+                  <>
+                    <HorizontalBarPairs
+                      captionTip='Relative scales of current snapshot only (normalized to the largest bar). Use line charts above for continuity over polls.'
+                      pairs={[
+                        { key: "sess", label: "Active sessions", value: ops.database.activeSessions, barColor: `linear-gradient(90deg, ${t.accent}, #ff9070)`, fmt: String },
+                        {
+                          key: "post",
+                          label: "Announcements · tickets(open)",
+                          value: ops.database.announcements + ops.database.ticketsOpen,
+                          barColor: `linear-gradient(90deg, #6ec8ff, ${t.good})`,
+                          fmt: (v) =>
+                            `${ops.database.announcements} · ${ops.database.ticketsOpen} (sum ${typeof v === "number" ? v : "-"})`,
+                        },
+                        { key: "audit", label: "Audit rows", value: ops.database.auditLogRows, barColor: "#c4b088", fmt: String },
+                      ]}
+                    />
+                    <SparklineSvg values={sSessActive} strokeColor="#ffa6c9" height={42} />
+                  </>
+                }
               />
             </div>
             <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 12 }}>
-              <div style={{ fontWeight: 900, color: t.textStrong, marginBottom: 6 }}>Integrations &amp; API</div>
+              <OverviewHoverTip tip="Deployment flags surfaced from env for quick checks — not realtime metrics themselves.">
+                <div style={{ fontWeight: 900, color: t.textStrong, marginBottom: 6, cursor: "help", width: "fit-content", borderBottom: `1px dashed ${t.border}` }}>Integrations &amp; API</div>
+              </OverviewHoverTip>
               <div style={{ color: t.muted, fontSize: 12, lineHeight: 1.55 }}>
                 <div>
                   DB host: <code style={code}>{ops.database.hostMasked}</code>
@@ -1290,16 +1666,6 @@ function SettingRow({ title, hint, value, onChange, disabled }) {
 }
 
 /** ---------- bits ---------- */
-function Stat({ k, v, accent, tone }) {
-  const valueColor = accent ? t.accent : tone === "warn" ? t.warn : tone === "muted" ? t.muted : t.textStrong;
-  return (
-    <div style={{ borderRadius: 16, border: `1px solid ${t.border}`, background: t.surface, backdropFilter: "blur(12px)", padding: "14px 16px" }}>
-      <div style={{ color: t.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase" }}>{k}</div>
-      <div style={{ color: valueColor, fontSize: 28, fontWeight: 950, marginTop: 4 }}>{Number(v).toLocaleString()}</div>
-    </div>
-  );
-}
-
 function Skeleton() {
   return <div style={{ padding: 16, color: t.muted, fontSize: 13 }}>Loading…</div>;
 }

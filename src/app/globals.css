@@ -245,24 +245,44 @@ body {
 }
 
 /* ============================================================
-   LOW-POWER MODE
+   PERFORMANCE: glass + overlays
    ============================================================
-   When `useLowPower()` flags the device the root gets `.ccs-low-power`.
-   Backdrop-filter blur is the single biggest CSS cost on integrated GPUs
-   and mobile, so we cap any inline blur to ~6px. React renders camelCase
-   `backdropFilter` as the kebab-case `backdrop-filter` attribute, so this
-   attribute selector hits both Chromium and Safari. */
-.ccs-low-power [style*="backdrop-filter"] {
-  backdrop-filter: blur(6px) !important;
-  -webkit-backdrop-filter: blur(6px) !important;
+   `.ccs-efficient` ships on every CCS Talks client — it caps inline backdrop
+   blurs (panels often used blur(12–16px)) so compositing stays sane on GPUs
+   driving Retina timelines.
+
+   `.ccs-low-power` is layered on users who opted into calmer/simple visuals OR
+   autodetected constrained devices — it removes backdrop-filter entirely while
+   solid rgba fills from inline styles preserve depth. Inline styles use camelCase,
+   serialized with `backdrop-filter` in Chromium/Safari. */
+.ccs-app.ccs-efficient:not(.ccs-low-power) [style*="backdrop-filter"],
+.ccs-efficient:not(.ccs-app) [style*="backdrop-filter"] {
+  backdrop-filter: blur(9px) !important;
+  -webkit-backdrop-filter: blur(9px) !important;
+}
+
+.ccs-low-power [style*="backdrop-filter"],
+.ccs-low-power [style*="backdropFilter"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.ccs-low-power .ccs-hamburger,
+.ccs-low-power .ccs-sidebar-backdrop.is-open {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 /* Animated cards / panels get a compositor hint so transforms don't hit
    the main thread paint phase. The contain rule lets the browser short-
    circuit layout work that's outside the card's box. */
-.ccs-app [data-anim="card"] {
+.ccs-app:not(.ccs-low-power) [data-anim="card"] {
   will-change: transform, opacity;
   contain: layout paint;
+}
+
+.ccs-app.ccs-low-power [data-anim="card"] {
+  will-change: auto;
 }
 
 /* Inline rail panels in ForumScreen are hidden on desktop because the floating

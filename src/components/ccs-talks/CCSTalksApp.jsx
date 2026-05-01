@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { styles } from "./theme";
+import { StaticBackdrop } from "./components/StaticBackdrop";
 import { ThreeBackground } from "./components/ThreeBackground";
 import { DynamicBlobs } from "./components/DynamicBlobs";
 import { useLowPower } from "./useLowPower";
@@ -29,6 +30,8 @@ function CCSTalksAppInner() {
   const { page, setPage, prefs, tokens, isAuthed } = useAppState();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { isLowPower } = useLowPower();
+  /** Animated WebGL/canvas backgrounds + maximal glass polish off — keeps layout/colors intact. */
+  const saveGpu = !!(prefs.reduceEffects || prefs.reduceMotion || isLowPower);
   const isForum = page === "forum";
   const isProfile = page === "profile";
   const isSearch = page === "search";
@@ -81,9 +84,11 @@ function CCSTalksAppInner() {
     document.body.style.color = tokens.text;
   }, [tokens]);
 
+  const accentWarm = isLight ? "#ff8aa3" : "#ff6080";
+
   return (
     <div
-      className={`ccs-app ${isLight ? "ccs-light" : "ccs-dark"}${isLowPower ? " ccs-low-power" : ""}`}
+      className={`ccs-app ccs-efficient ${isLight ? "ccs-light" : "ccs-dark"}${saveGpu ? " ccs-low-power" : ""}`}
       style={{
         ...styles.root,
         background: tokens.appBg,
@@ -91,25 +96,31 @@ function CCSTalksAppInner() {
         fontSize: prefs.largerText ? 16.5 : 15,
       }}
     >
-      {/* WebGL layer first, canvas blobs on top (same z-index) so the 2D pass stays visible. */}
-      {!isLight && (
+      {/* Background layers: animated stack vs cheap CSS radial wash. */}
+      {saveGpu ? (
+        <StaticBackdrop accent={accentWarm} light={isLight} />
+      ) : (
         <>
-          <ThreeBackground active accent={isLight ? "#ff8aa3" : "#ff6080"} light={isLight} />
-          <DynamicBlobs intensity={0.55} />
+          {!isLight && (
+            <>
+              <ThreeBackground active accent={accentWarm} light={isLight} />
+              <DynamicBlobs intensity={0.52} />
+            </>
+          )}
+          {isLight && <ThreeBackground active accent={accentWarm} light={isLight} />}
+          {isLight && (
+            <div
+              aria-hidden="true"
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 0,
+                pointerEvents: "none",
+                background: "rgba(255,245,247,0.45)",
+              }}
+            />
+          )}
         </>
-      )}
-      {isLight && <ThreeBackground active accent={isLight ? "#ff8aa3" : "#ff6080"} light={isLight} />}
-      {isLight && (
-        <div
-          aria-hidden="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 0,
-            pointerEvents: "none",
-            background: "rgba(255,245,247,0.45)",
-          }}
-        />
       )}
       <div style={styles.page}>
         {hasSidebarShell ? (

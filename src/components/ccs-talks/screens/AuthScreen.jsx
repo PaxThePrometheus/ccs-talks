@@ -28,10 +28,14 @@ export function AuthScreen({ mode, setPage }) {
   useEffect(() => {
     const el = cardRef.current;
     if (!el || !gsapLoaded) return;
-    if (prefs.reduceMotion) return;
+    if (prefs.reduceMotion || prefs.reduceEffects) {
+      el.style.opacity = "1";
+      el.style.transform = "none";
+      return;
+    }
     if (typeof window === "undefined" || !window.gsap) return;
     window.gsap.fromTo(el, { opacity: 0, y: 28, scale: 0.98 }, { opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.2)", immediateRender: true });
-  }, [gsapLoaded, mode, prefs.reduceMotion]);
+  }, [gsapLoaded, mode, prefs.reduceMotion, prefs.reduceEffects]);
 
   useEffect(() => {
     if (isLogin) return;

@@ -61,7 +61,7 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
 
   useEffect(() => {
     if (typeof window === "undefined" || !composeRef.current) return undefined;
-    if (gsapLoaded && window.gsap && !prefs.reduceMotion) {
+    if (gsapLoaded && window.gsap && !(prefs.reduceMotion || prefs.reduceEffects)) {
       window.gsap.fromTo(composeRef.current, { opacity: 0, y: -16 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" });
       return undefined;
     }
@@ -70,7 +70,7 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
       if (composeRef.current) composeRef.current.style.opacity = "1";
     }, 1200);
     return () => clearTimeout(id);
-  }, [gsapLoaded, prefs.reduceMotion]);
+  }, [gsapLoaded, prefs.reduceMotion, prefs.reduceEffects]);
 
   const handlePublish = async () => {
     if (readOnly) {

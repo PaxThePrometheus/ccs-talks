@@ -13,7 +13,7 @@ function clamp(v, a, b) {
 
 export function DynamicBlobs({ intensity = 1 }) {
   const canvasRef = useRef(null);
-  const { pixelRatioCap, fpsCap, blobMultiplier, blurMultiplier } = useLowPower();
+  const { pixelRatioCap, fpsCap, blobMultiplier, blurMultiplier, cheapCanvasPass } = useLowPower();
 
   const blobCount = Math.max(5, Math.round(12 * blobMultiplier));
   const blobs = useMemo(() => {
@@ -144,20 +144,22 @@ export function DynamicBlobs({ intensity = 1 }) {
         ctx.fill();
       }
 
-      // add a sharper core pass to sell the "lava lamp" blobs
-      ctx.filter = `blur(${Math.round(20 * intensity * blurMultiplier)}px)`;
-      for (const b of blobs) {
-        const rr = (b.r * 0.34) + (b.r2 * 0.18) * (0.5 + 0.5 * Math.sin(time * 0.9 + b.phase));
-        const cx = b.x * w;
-        const cy = b.y * h;
-        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rr);
-        const a = (b.alpha * 0.55) * intensity;
-        g.addColorStop(0, `rgba(${b.color[0]},${b.color[1]},${b.color[2]},${a})`);
-        g.addColorStop(1, "rgba(0,0,0,0)");
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(cx, cy, rr, 0, Math.PI * 2);
-        ctx.fill();
+      // Secondary “core” pass reads richer but doubles filter work — skipped on efficiency tier.
+      if (!cheapCanvasPass) {
+        ctx.filter = `blur(${Math.round(20 * intensity * blurMultiplier)}px)`;
+        for (const b of blobs) {
+          const rr = b.r * 0.34 + b.r2 * 0.18 * (0.5 + 0.5 * Math.sin(time * 0.9 + b.phase));
+          const cx = b.x * w;
+          const cy = b.y * h;
+          const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rr);
+          const a = (b.alpha * 0.55) * intensity;
+          g.addColorStop(0, `rgba(${b.color[0]},${b.color[1]},${b.color[2]},${a})`);
+          g.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
 
       ctx.filter = "none";
@@ -170,7 +172,7 @@ export function DynamicBlobs({ intensity = 1 }) {
       window.removeEventListener("resize", resize);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [blobs, intensity, pixelRatioCap, fpsCap, blurMultiplier]);
+  }, [blobs, intensity, pixelRatioCap, fpsCap, blurMultiplier, cheapCanvasPass]);
 
   return (
     <canvas
@@ -180,8 +182,9 @@ export function DynamicBlobs({ intensity = 1 }) {
         inset: 0,
         zIndex: 0,
         pointerEvents: "none",
-        opacity: 1,
-        mixBlendMode: "screen",
+        opacity: cheapCanvasPass ? 0.92 : 1,
+        /* `screen` is pretty on OLED but forces an extra fullscreen blend every frame on some GPUs. */
+        mixBlendMode: cheapCanvasPass ? "lighter" : "screen",
       }}
     />
   );

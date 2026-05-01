@@ -17,6 +17,8 @@ export const CCS_DEFAULT_PREFS = {
   allowDMs: "Friends",
   showOnlineStatus: true,
   reduceMotion: false,
+  /** Disables animated WebGL/2D backgrounds and strips heavy glass blur (see `.ccs-low-power`). */
+  reduceEffects: false,
   largerText: false,
   onboardingCompleted: false,
 };

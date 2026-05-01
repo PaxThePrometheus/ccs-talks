@@ -3,10 +3,12 @@
 import { useEffect, useRef } from "react";
 import { GSAP_CDN } from "../cdn";
 import { THEME } from "../theme";
+import { useAppState } from "../state/AppState";
 import { useScript } from "../useScript";
 
 export function AboutScreen() {
   const gsapLoaded = useScript(GSAP_CDN, { expectGlobal: "gsap" });
+  const { prefs } = useAppState();
   const headRef = useRef(null);
   const subRef = useRef(null);
 
@@ -28,7 +30,7 @@ export function AboutScreen() {
     if (!h || !p) return;
     gsap.fromTo(h, { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1, ease: "power3.out" });
     gsap.fromTo(p, { opacity: 0 }, { opacity: 1, duration: 0.8, delay: 0.4 });
-  }, [gsapLoaded]);
+  }, [gsapLoaded, prefs.reduceMotion, prefs.reduceEffects]);
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", paddingTop: 68, textAlign: "center" }}>

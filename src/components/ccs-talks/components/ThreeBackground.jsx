@@ -105,7 +105,7 @@ export function ThreeBackground({ active = true, accent = "#ff6080", light = fal
       // Antialiasing is the single most expensive WebGL setting on integrated
       // GPUs. We disable it on low-end and rely on the shader's smoothstep for
       // soft edges (which is what gives the wax look anyway).
-      antialias: pixelRatioCap >= 2,
+      antialias: pixelRatioCap >= 1.85,
       premultipliedAlpha: false,
       // Hint to the GPU scheduler that this is a background effect, not a game.
       powerPreference: "low-power",

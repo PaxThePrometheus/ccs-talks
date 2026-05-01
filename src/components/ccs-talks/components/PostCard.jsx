@@ -25,11 +25,13 @@ export function PostCard({
   const gsapLoaded = useScript(GSAP_CDN, { expectGlobal: "gsap" });
   const { tokens, prefs, users, visitUserProfile } = useAppState();
   const isLight = prefs.mode === "light";
+  const calmMotion = !!(prefs.reduceMotion || prefs.reduceEffects);
+  const liftHover = !(prefs.reduceMotion || prefs.reduceEffects);
   const handleDir = useMemo(() => buildHandleDirectory(users), [users]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !cardRef.current) return undefined;
-    if (gsapLoaded && window.gsap && !prefs.reduceMotion) {
+    if (gsapLoaded && window.gsap && !calmMotion) {
       // Apple-y bounce: small overshoot, kept short and tasteful.
       window.gsap.fromTo(
         cardRef.current,
@@ -44,7 +46,7 @@ export function PostCard({
       if (cardRef.current) cardRef.current.style.opacity = "1";
     }, 1200);
     return () => clearTimeout(id);
-  }, [gsapLoaded, post.id, prefs.reduceMotion]);
+  }, [gsapLoaded, post.id, calmMotion]);
 
   const tagColor = isLight
     ? { General: "#e9d4dd", Academics: "#d6e0f0", Tech: "#d4ece3", Events: "#f0d6d6" }
@@ -79,7 +81,7 @@ export function PostCard({
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.borderColor = tokens.borderStrong;
-        e.currentTarget.style.transform = "translateY(-1px)";
+        if (liftHover) e.currentTarget.style.transform = "translateY(-1px)";
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.borderColor = tokens.cardBorder;

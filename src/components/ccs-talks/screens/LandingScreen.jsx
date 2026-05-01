@@ -75,7 +75,7 @@ export function LandingScreen({ setPage }) {
         if (r.current) r.current.style.opacity = "1";
       });
     };
-    if (prefs.reduceMotion) {
+    if (prefs.reduceMotion || prefs.reduceEffects) {
       reveal();
       return;
     }
@@ -94,7 +94,7 @@ export function LandingScreen({ setPage }) {
     gs.fromTo(a, { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.85, ease: "back.out(1.4)", immediateRender: true });
     gs.fromTo(b, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.7, delay: 0.18, ease: "back.out(1.2)", immediateRender: true });
     gs.fromTo(c, { opacity: 0, y: 14, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.65, delay: 0.32, ease: "back.out(1.6)", immediateRender: true });
-  }, [gsapLoaded, prefs.reduceMotion]);
+  }, [gsapLoaded, prefs.reduceMotion, prefs.reduceEffects]);
 
   const brandTitle = cms.brandName || APP_CONFIG.brand.name;
 

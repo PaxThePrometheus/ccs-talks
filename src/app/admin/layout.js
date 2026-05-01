@@ -6,7 +6,7 @@ export const metadata = {
 export default function AdminLayout({ children }) {
   return (
     <div
-      className="ccs-admin-shell ccs-admin-bar-scroll"
+      className="ccs-admin-shell ccs-admin-bar-scroll ccs-efficient"
       style={{
         minHeight: "100vh",
         maxHeight: "100vh",

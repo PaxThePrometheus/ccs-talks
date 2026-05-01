@@ -89,6 +89,13 @@ export function SettingsScreen() {
 
           {tab === "accessibility" && (
             <Section title="Accessibility" hint="Calmer motion and easier reading." tokens={tokens}>
+              <Row
+                label="Simpler visuals (faster)"
+                sub="Turns off animated lava/WebGL backdrop and heavier frosted glass. Keeps colors and typography."
+                tokens={tokens}
+              >
+                <Toggle checked={prefs.reduceEffects} onChange={(v) => updatePrefs({ reduceEffects: v })} />
+              </Row>
               <Row label="Reduce motion" tokens={tokens}><Toggle checked={prefs.reduceMotion} onChange={(v) => updatePrefs({ reduceMotion: v })} /></Row>
               <Row label="Larger text" tokens={tokens}><Toggle checked={prefs.largerText} onChange={(v) => updatePrefs({ largerText: v })} /></Row>
               <Row label="High contrast (preview)" tokens={tokens}><Toggle disabled hint="Coming soon" /></Row>
@@ -125,10 +132,13 @@ function Section({ title, hint, warning, children, tokens }) {
   );
 }
 
-function Row({ label, children, tokens }) {
+function Row({ label, sub, children, tokens }) {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 0", borderTop: `1px solid ${tokens.divider}` }}>
-      <div style={{ color: tokens.text, fontSize: 13, fontWeight: 750 }}>{label}</div>
+      <div style={{ flex: "1 1 auto", minWidth: 140 }}>
+        <div style={{ color: tokens.text, fontSize: 13, fontWeight: 750 }}>{label}</div>
+        {sub ? <div style={{ color: tokens.textMuted, fontSize: 11.5, marginTop: 4, lineHeight: 1.35, maxWidth: 420 }}>{sub}</div> : null}
+      </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>{children}</div>
     </div>
   );

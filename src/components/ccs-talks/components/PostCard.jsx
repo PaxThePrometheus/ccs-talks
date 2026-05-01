@@ -22,7 +22,6 @@ export function PostCard({
   onShare,
   onReport,
   readOnly = false,
-  onSignInPrompt,
 }) {
   const cardRef = useRef(null);
   const [imageViewer, setImageViewer] = useState(null);
@@ -70,10 +69,6 @@ export function PostCard({
 
   const openAuthorProfile = () => {
     if (!post?.userId) return;
-    if (readOnly) {
-      onSignInPrompt?.();
-      return;
-    }
     visitUserProfile(post.userId);
   };
 
@@ -104,7 +99,7 @@ export function PostCard({
       <div style={{ padding: "1.05rem 1.2rem", display: "flex", alignItems: "flex-start", gap: 12 }}>
         <button
           type="button"
-          aria-label={readOnly ? `Sign in to view ${displayName}'s profile` : `View ${displayName}'s profile`}
+          aria-label={`View ${displayName}'s profile`}
           onClick={openAuthorProfile}
           onMouseEnter={(e) => {
             if (!onAuthorEnter) return;

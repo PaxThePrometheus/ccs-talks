@@ -27,7 +27,7 @@ import { OnboardingModal } from "./ui/OnboardingModal";
 import { AppStateProvider, useAppState } from "./state/AppState";
 
 function CCSTalksAppInner() {
-  const { page, setPage, prefs, tokens, isAuthed } = useAppState();
+  const { page, setPage, prefs, tokens, isAuthed, profileVisitUserId } = useAppState();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { isLowPower } = useLowPower();
   /** Animated WebGL/canvas backgrounds + maximal glass polish off — keeps layout/colors intact. */
@@ -65,6 +65,11 @@ function CCSTalksAppInner() {
   useEffect(() => {
     if (requiresAuth) setPage("login");
   }, [requiresAuth, setPage]);
+
+  useEffect(() => {
+    if (isAuthed || page !== "profile") return;
+    if (!String(profileVisitUserId || "").trim()) setPage("forum");
+  }, [isAuthed, page, profileVisitUserId, setPage]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -153,7 +158,7 @@ function CCSTalksAppInner() {
             {isForum && <ForumScreen readOnly={!isAuthed} onSignInPrompt={() => setPage("login")} />}
             {isAnnouncements && <AnnouncementsScreen />}
             {isTickets && <TicketsScreen onNeedSignIn={() => setPage("login")} />}
-            {isProfile && isAuthed && <ProfileScreen />}
+            {isProfile && (isAuthed || String(profileVisitUserId || "").trim()) && <ProfileScreen />}
             {isSearch && <SearchScreen />}
             {isActivities && isAuthed && <ActivitiesScreen />}
             {isBookmarks && isAuthed && <BookmarksScreen />}

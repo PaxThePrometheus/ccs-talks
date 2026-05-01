@@ -24,6 +24,11 @@ export function Sidebar({ setPage, activeKey = "forum", mobileOpen = false, onMo
         return;
       }
     }
+    if (!isAuthed && (key === "profile" || key === "activities" || key === "bookmarks" || key === "friends" || key === "subs")) {
+      setPage("login");
+      onMobileClose?.();
+      return;
+    }
     if (key === "profile") resetProfileVisit();
     setPage(key);
     onMobileClose?.();

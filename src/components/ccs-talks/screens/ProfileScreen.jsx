@@ -44,6 +44,8 @@ export function ProfileScreen() {
     persistFullProfile,
     usernameCooldownUntil,
     badgeColors,
+    isAuthed,
+    setPage,
   } = useAppState();
   const isLight = prefs.mode === "light";
   const [isEditing, setIsEditing] = useState(false);
@@ -55,6 +57,16 @@ export function ProfileScreen() {
   const [composeTag, setComposeTag] = useState(() => prefs.defaultPostTag || "General");
   const [composeImage, setComposeImage] = useState("");
   const [postTagOptions] = useState(() => defaultLandingCms().postTagOptions);
+
+  /** Signed-out user viewing another member via forum author click — public card only. */
+  const isGuestPeek =
+    !isAuthed && !!String(profileVisitUserId || "").trim();
+
+  /** Guests never see Posts/Friends panels; stale tab state maps to About. */
+  const peekTab = useMemo(() => {
+    if (isGuestPeek && (tab === "posts" || tab === "friends")) return "about";
+    return tab;
+  }, [isGuestPeek, tab]);
 
   const displayUser = useMemo(() => {
     if (!profileVisitUserId) return profile;
@@ -110,8 +122,15 @@ export function ProfileScreen() {
             <button type="button" onClick={() => reloadVisitedProfile()} style={headerBtn(undefined, tokens)}>
               Retry
             </button>
-            <button type="button" onClick={() => resetProfileVisit()} style={headerBtn(undefined, tokens)}>
-              Back to my profile
+            <button
+              type="button"
+              onClick={() => {
+                resetProfileVisit();
+                if (isGuestPeek) setPage("forum");
+              }}
+              style={headerBtn(undefined, tokens)}
+            >
+              {isGuestPeek ? "Back to forum" : "Back to my profile"}
             </button>
           </div>
         </div>
@@ -171,11 +190,23 @@ export function ProfileScreen() {
             }}
           >
             <div style={{ fontSize: 13, color: tokens.textMuted }}>
-              Viewing <b style={{ color: tokens.textStrong }}>@{displayUser.handle}</b>
+              Viewing{" "}
+              {isGuestPeek ? (
+                <span>
+                  public profile · <b style={{ color: tokens.textStrong }}>@{displayUser.handle}</b>
+                </span>
+              ) : (
+                <span>
+                  <b style={{ color: tokens.textStrong }}>@{displayUser.handle}</b>
+                </span>
+              )}
             </div>
             <button
               type="button"
-              onClick={() => resetProfileVisit()}
+              onClick={() => {
+                resetProfileVisit();
+                if (isGuestPeek) setPage("forum");
+              }}
               style={{
                 border: `1px solid ${tokens.border}`,
                 background: tokens.cardBg,
@@ -187,7 +218,7 @@ export function ProfileScreen() {
                 fontSize: 12,
               }}
             >
-              Back to my profile
+              {isGuestPeek ? "Back to forum" : "Back to my profile"}
             </button>
           </div>
         ) : null}
@@ -317,6 +348,8 @@ export function ProfileScreen() {
                 🖌 Cover
               </button>
             </div>
+          ) : isGuestPeek ? (
+            <GuestPeekProfileActions target={user} tokens={tokens} setPage={setPage} />
           ) : (
             <OtherProfileActions
               target={user}
@@ -363,15 +396,21 @@ export function ProfileScreen() {
         </button>
         ) : null}
 
-        {/* Tabs */}
+        {/* Tabs — guests only get About + Photos (no timeline or friends list). */}
         <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {[
-            ["posts", "Posts"],
-            ["about", "About"],
-            ["friends", "Friends"],
-            ["photos", "Photos"],
-          ].map(([k, label]) => (
-            <button key={k} onClick={() => setTab(k)} style={tabPill(tab === k, tokens, isLight)}>
+          {(isGuestPeek
+            ? [
+                ["about", "About"],
+                ["photos", "Photos"],
+              ]
+            : [
+                ["posts", "Posts"],
+                ["about", "About"],
+                ["friends", "Friends"],
+                ["photos", "Photos"],
+              ]
+          ).map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)} style={tabPill(peekTab === k, tokens, isLight)}>
               {label}
             </button>
           ))}
@@ -388,12 +427,18 @@ export function ProfileScreen() {
                 <Chip>🧩 Org: {user.org}</Chip>
               </div>
               <div style={{ marginTop: 12, height: 1, background: tokens.divider }} />
-              <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <Stat k="Posts" v={String(myPosts.length)} tokens={tokens} />
-                {isSelf ? <Stat k="Bookmarks" v={String(posts.filter((p) => p.bookmarked).length)} tokens={tokens} /> : null}
-                <Stat k="Likes" v={String(myPosts.reduce((s, p) => s + (p.likes || 0), 0))} tokens={tokens} />
-                <Stat k="Badges" v={String((user.badges || []).length)} tokens={tokens} />
-              </div>
+              {isGuestPeek ? (
+                <div style={{ marginTop: 12, color: tokens.textMuted, fontSize: 12, lineHeight: 1.55 }}>
+                  Sign in to see this member’s posts, friends, and full activity on the forum.
+                </div>
+              ) : (
+                <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <Stat k="Posts" v={String(myPosts.length)} tokens={tokens} />
+                  {isSelf ? <Stat k="Bookmarks" v={String(posts.filter((p) => p.bookmarked).length)} tokens={tokens} /> : null}
+                  <Stat k="Likes" v={String(myPosts.reduce((s, p) => s + (p.likes || 0), 0))} tokens={tokens} />
+                  <Stat k="Badges" v={String((user.badges || []).length)} tokens={tokens} />
+                </div>
+              )}
             </div>
 
             <div style={{ marginTop: 12, ...panelStyle(tokens, isLight) }}>
@@ -435,7 +480,7 @@ export function ProfileScreen() {
           </div>
 
           <div>
-            {tab === "posts" && (
+            {peekTab === "posts" && (
               <>
                 {isSelf ? (
                   <div style={panelStyle(tokens, isLight)}>
@@ -492,7 +537,7 @@ export function ProfileScreen() {
               </>
             )}
 
-            {tab === "about" && (
+            {peekTab === "about" && (
               <div style={panelStyle(tokens, isLight)}>
                 <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.2px" }}>About</div>
                 <div style={{ marginTop: 8, color: tokens.textMuted, fontSize: 13, lineHeight: 1.7 }}>
@@ -503,7 +548,7 @@ export function ProfileScreen() {
               </div>
             )}
 
-            {tab === "friends" && (
+            {peekTab === "friends" && (
               <div style={panelStyle(tokens, isLight)}>
                 {isSelf ? (
                   <>
@@ -583,7 +628,7 @@ export function ProfileScreen() {
               </div>
             )}
 
-            {tab === "photos" && (
+            {peekTab === "photos" && (
               <div style={panelStyle(tokens, isLight)}>
                 <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.2px" }}>Cover & avatar</div>
                 {isSelf ? (
@@ -628,7 +673,33 @@ export function ProfileScreen() {
         }}
       />
       <AccountCenterModal open={accountOpen} onCancel={() => setAccountOpen(false)} />
-      <PostDetailModal open={activePostId != null} postId={activePostId} onClose={() => setActivePostId(null)} />
+      {!isGuestPeek ? <PostDetailModal open={activePostId != null} postId={activePostId} onClose={() => setActivePostId(null)} /> : null}
+    </div>
+  );
+}
+
+function GuestPeekProfileActions({ target, tokens, setPage }) {
+  if (!target?.id) return null;
+  const share = async () => {
+    const line =
+      typeof window !== "undefined"
+        ? `${window.location.origin}${window.location.pathname}#profile@${target.handle || ""}`
+        : `@${target.handle || ""}`;
+    try {
+      await navigator.clipboard.writeText(line);
+      window.alert("Profile link copied.");
+    } catch {
+      window.alert(line);
+    }
+  };
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: 420 }}>
+      <button type="button" onClick={() => void share()} style={headerBtn(undefined, tokens)}>
+        Share profile
+      </button>
+      <button type="button" onClick={() => setPage("login")} style={headerBtn("solid", tokens)}>
+        Sign in to follow
+      </button>
     </div>
   );
 }

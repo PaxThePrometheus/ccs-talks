@@ -1,6 +1,6 @@
 import crypto, { randomUUID } from "node:crypto";
 import { DEFAULT_PROFILE } from "@/components/ccs-talks/config/appConfig";
-import { asc, desc, eq, inArray, lte, ne } from "drizzle-orm";
+import { asc, desc, eq, inArray, lte, ne, sql } from "drizzle-orm";
 import {
   CCS_DEFAULT_FRIENDS,
   CCS_DEFAULT_PREFS,
@@ -532,6 +532,26 @@ export async function getAccountWire(token) {
   const [row] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, viewer.id)).limit(1);
   if (!row) return null;
   return accountWireFromRow(row);
+}
+
+/** Resolve a user id from their public handle (case-insensitive, trimmed). */
+export async function findUserIdByPublicHandle(handleRaw) {
+  const h = String(handleRaw || "").trim().toLowerCase();
+  if (!h) return null;
+  const db = await getDb();
+  const [hit] = await db
+    .select({ id: schema.ccsUsers.id })
+    .from(schema.ccsUsers)
+    .where(sql`lower(trim(coalesce(${schema.ccsUsers.profile}->>'handle', ''))) = ${h}`)
+    .limit(1);
+  return hit?.id ?? null;
+}
+
+/** Same rows as {@link fetchVisitProfileBundle} but keyed by handle in the URL. */
+export async function fetchVisitProfileBundleByHandle(handleRaw) {
+  const uid = await findUserIdByPublicHandle(handleRaw);
+  if (!uid) return null;
+  return fetchVisitProfileBundle(uid);
 }
 
 /** Public card + friend's public profiles for Profile visit view (friends tab). */

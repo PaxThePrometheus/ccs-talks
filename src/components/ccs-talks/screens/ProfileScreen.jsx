@@ -683,7 +683,7 @@ function GuestPeekProfileActions({ target, tokens, setPage }) {
   const share = async () => {
     const line =
       typeof window !== "undefined"
-        ? `${window.location.origin}${window.location.pathname}#profile@${target.handle || ""}`
+        ? `${window.location.origin}/profile/${encodeURIComponent(String(target.handle || "").trim())}`
         : `@${target.handle || ""}`;
     try {
       await navigator.clipboard.writeText(line);
@@ -712,7 +712,10 @@ function OtherProfileActions({ target, viewerId, tokens, subs, friends, toggleFo
   const outgoing = friends?.outgoing?.includes(fid);
 
   const share = async () => {
-    const line = typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}#profile@${target.handle || ""}` : `@${target.handle || ""}`;
+    const line =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/profile/${encodeURIComponent(String(target.handle || "").trim())}`
+        : `@${target.handle || ""}`;
     try {
       await navigator.clipboard.writeText(line);
       window.alert("Profile link copied.");

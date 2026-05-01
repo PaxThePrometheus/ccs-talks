@@ -43,6 +43,13 @@ export function getVisitProfile(userId) {
   return jsonFetch(`/api/profile?visitUserId=${encodeURIComponent(id)}`, { method: "GET" });
 }
 
+/** Public profile bundle by @handle (deep links `/profile/handle` + legacy `#profile@handle`). */
+export function getVisitProfileByHandle(handle) {
+  const h = String(handle || "").trim();
+  if (!h) return Promise.reject(new Error("Missing handle."));
+  return jsonFetch(`/api/profile?visitHandle=${encodeURIComponent(h)}`, { method: "GET" });
+}
+
 export function getPosts(query = {}) {
   const qs = new URLSearchParams();
   if (query.tag) qs.set("tag", query.tag);

@@ -274,20 +274,43 @@ export function AppStateProvider({ children }) {
     [refreshFeed]
   );
 
-  const fetchAndMergeVisit = useCallback((userId) => {
-    const id = String(userId || "").trim();
-    if (!id) return Promise.resolve(null);
-    return api.getVisitProfile(id).then((bundle) => {
-      if (!bundle?.profile || String(bundle.profile.id) !== id) return null;
-      setVisitedProfileFriends({ userId: id, friendIds: Array.isArray(bundle.friendIds) ? bundle.friendIds : [] });
-      setFeedUsersById((prev) => ({
-        ...prev,
-        ...(bundle.friendMiniUsers && typeof bundle.friendMiniUsers === "object" ? bundle.friendMiniUsers : {}),
-        [bundle.profile.id]: { ...DEFAULT_PROFILE, ...bundle.profile },
-      }));
-      return bundle;
-    });
+  const applyVisitProfileBundle = useCallback((bundle) => {
+    if (!bundle?.profile?.id) return null;
+    const id = String(bundle.profile.id);
+    setVisitedProfileFriends({ userId: id, friendIds: Array.isArray(bundle.friendIds) ? bundle.friendIds : [] });
+    setFeedUsersById((prev) => ({
+      ...prev,
+      ...(bundle.friendMiniUsers && typeof bundle.friendMiniUsers === "object" ? bundle.friendMiniUsers : {}),
+      [bundle.profile.id]: { ...DEFAULT_PROFILE, ...bundle.profile },
+    }));
+    return id;
   }, []);
+
+  const fetchAndMergeVisit = useCallback(
+    (userId) => {
+      const id = String(userId || "").trim();
+      if (!id) return Promise.resolve(null);
+      return api.getVisitProfile(id).then((bundle) => {
+        if (!bundle?.profile || String(bundle.profile.id) !== id) return null;
+        applyVisitProfileBundle(bundle);
+        return bundle;
+      });
+    },
+    [applyVisitProfileBundle]
+  );
+
+  const fetchAndMergeVisitByHandle = useCallback(
+    (handle) => {
+      const h = String(handle || "").trim();
+      if (!h) return Promise.resolve(null);
+      return api.getVisitProfileByHandle(h).then((bundle) => {
+        if (!bundle?.profile?.id) return null;
+        applyVisitProfileBundle(bundle);
+        return bundle;
+      });
+    },
+    [applyVisitProfileBundle]
+  );
 
   const visitUserProfile = useCallback(
     (userId) => {
@@ -310,6 +333,10 @@ export function AppStateProvider({ children }) {
   const resetProfileVisit = useCallback(() => {
     setProfileVisitUserId(null);
     setVisitedProfileFriends(null);
+    if (typeof window !== "undefined" && /^#profile@/i.test(window.location.hash)) {
+      const path = `${window.location.pathname}${window.location.search || ""}`;
+      window.history.replaceState(null, "", path);
+    }
   }, []);
 
   const addActivity = (a) => {

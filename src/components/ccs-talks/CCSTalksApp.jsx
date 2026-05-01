@@ -25,6 +25,7 @@ import { FriendsScreen } from "./screens/FriendsScreen";
 import { SubscriptionsScreen } from "./screens/SubscriptionsScreen";
 import { OnboardingModal } from "./ui/OnboardingModal";
 import { AppStateProvider, useAppState } from "./state/AppState";
+import { TalksRouterSync } from "./routing/TalksRouterSync";
 
 function CCSTalksAppInner() {
   const { page, setPage, prefs, tokens, isAuthed, profileVisitUserId } = useAppState();
@@ -193,6 +194,7 @@ function CCSTalksAppInner() {
 export default function CCSTalksApp() {
   return (
     <AppStateProvider>
+      <TalksRouterSync />
       <CCSTalksAppInner />
     </AppStateProvider>
   );

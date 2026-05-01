@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
+import { badgeAccentForLabel, badgePillColors } from "@/lib/ccs/badgeColors";
 
-export function MiniProfilePreview({ visible, user, anchorRect, onRequestClose, onMouseEnter, onMouseLeave }) {
+const MP_PILL_TOKENS = {
+  text: "rgba(255,255,255,0.82)",
+  border: "rgba(255,255,255,0.10)",
+  surfaceAlt: "rgba(80,0,26,0.45)",
+};
+
+export function MiniProfilePreview({ visible, user, anchorRect, badgeColors, onRequestClose, onMouseEnter, onMouseLeave }) {
   const pos = useMemo(() => {
     if (!anchorRect) return null;
     const gap = 10;
@@ -91,7 +98,7 @@ export function MiniProfilePreview({ visible, user, anchorRect, onRequestClose, 
 
         <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
           {(user.badges || []).slice(0, 3).map((b) => (
-            <Pill key={b} tone="badge">
+            <Pill key={b} tone="badge" badgeColors={badgeColors} badgeLabel={b}>
               {b}
             </Pill>
           ))}
@@ -101,7 +108,30 @@ export function MiniProfilePreview({ visible, user, anchorRect, onRequestClose, 
   );
 }
 
-function Pill({ children, tone }) {
+function Pill({ children, tone, badgeColors, badgeLabel }) {
+  if (tone === "badge" && badgeLabel) {
+    const acc = badgeAccentForLabel(badgeColors || {}, badgeLabel);
+    const ps = badgePillColors(acc, false, MP_PILL_TOKENS);
+    return (
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          padding: "6px 10px",
+          borderRadius: 999,
+          border: `1px solid ${ps.border}`,
+          background: ps.background,
+          color: ps.color,
+          fontSize: 11,
+          fontWeight: 700,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {children}
+      </span>
+    );
+  }
+
   const bg = tone === "badge" ? "rgba(80,0,26,0.45)" : "rgba(255,255,255,0.06)";
   return (
     <span

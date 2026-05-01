@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as api from "../api/ccsApi";
+import { buildHandleDirectory } from "../components/MentionBody";
+import { CcsMarkdown } from "../components/CcsMarkdown";
 import { useAppState } from "../state/AppState";
 
 export function AnnouncementsScreen() {
-  const { tokens } = useAppState();
+  const { tokens, users, visitUserProfile } = useAppState();
+  const handleDir = useMemo(() => buildHandleDirectory(users), [users]);
   const [items, setItems] = useState([]);
   const [err, setErr] = useState("");
 
@@ -71,7 +74,15 @@ export function AnnouncementsScreen() {
                 <span style={{ fontSize: 12, color: tokens.textSubtle }}>{new Date(a.createdAt).toLocaleString()}</span>
               </div>
               <h2 style={{ margin: "8px 0 6px", fontSize: 18, fontWeight: 900, color: tokens.textStrong }}>{a.title}</h2>
-              <div style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.6, color: tokens.textMuted }}>{a.body}</div>
+              <div style={{ marginTop: 4 }}>
+                <CcsMarkdown
+                  source={a.body}
+                  accentColor={tokens.accent}
+                  handleToUserId={handleDir}
+                  onVisitUser={visitUserProfile}
+                  tokens={tokens}
+                />
+              </div>
             </article>
           ))}
         </div>

@@ -12,7 +12,7 @@ import { PostDetailModal } from "../ui/PostDetailModal";
 import { FeedComposer } from "../ui/FeedComposer";
 
 export function ForumScreen({ readOnly = false, onSignInPrompt }) {
-  const { users, posts, likePost, toggleBookmark, sharePost, reportPost, tokens, prefs, setPage, publishPost } = useAppState();
+  const { users, posts, likePost, toggleBookmark, sharePost, reportPost, tokens, prefs, setPage, publishPost, applyLandingExtras, badgeColors } = useAppState();
   const isLight = prefs.mode === "light";
   const [forumRail, setForumRail] = useState(() => defaultLandingCms().forumRail);
   const [postTagOptions, setPostTagOptions] = useState(() => defaultLandingCms().postTagOptions);
@@ -21,7 +21,7 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
   const [composeImage, setComposeImage] = useState("");
   const composeRef = useRef(null);
   const feedScrollRef = useRef(null);
-  const gsapLoaded = useScript(GSAP_CDN);
+  const gsapLoaded = useScript(GSAP_CDN, { expectGlobal: "gsap" });
   const [loadingMore, setLoadingMore] = useState(false);
   const [caughtUp, setCaughtUp] = useState(false);
   const [preview, setPreview] = useState(null);
@@ -35,15 +35,18 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
     const poll = async () => {
       try {
         const d = await api.getLanding();
-        if (!alive || !d?.cms?.forumRail) return;
-        setForumRail((prev) => ({
-          rising: Array.isArray(d.cms.forumRail.rising) ? d.cms.forumRail.rising : prev.rising,
-          interests: Array.isArray(d.cms.forumRail.interests) ? d.cms.forumRail.interests : prev.interests,
-          trending: Array.isArray(d.cms.forumRail.trending) ? d.cms.forumRail.trending : prev.trending,
-        }));
-        if (Array.isArray(d.cms.postTagOptions) && d.cms.postTagOptions.length) {
+        if (!alive) return;
+        if (d?.cms?.forumRail) {
+          setForumRail((prev) => ({
+            rising: Array.isArray(d.cms.forumRail.rising) ? d.cms.forumRail.rising : prev.rising,
+            interests: Array.isArray(d.cms.forumRail.interests) ? d.cms.forumRail.interests : prev.interests,
+            trending: Array.isArray(d.cms.forumRail.trending) ? d.cms.forumRail.trending : prev.trending,
+          }));
+        }
+        if (Array.isArray(d?.cms?.postTagOptions) && d.cms.postTagOptions.length) {
           setPostTagOptions(d.cms.postTagOptions.map(String));
         }
+        if (d.badgeColors && typeof d.badgeColors === "object") applyLandingExtras(d);
       } catch {
         /* keep last good rail */
       }
@@ -54,7 +57,7 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
       alive = false;
       window.clearInterval(id);
     };
-  }, []);
+  }, [applyLandingExtras]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !composeRef.current) return undefined;
@@ -384,6 +387,7 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
       <MiniProfilePreview
         visible={!!preview}
         user={preview ? users[preview.userId] : null}
+        badgeColors={badgeColors}
         anchorRect={preview?.rect}
         onMouseEnter={handlePreviewEnter}
         onMouseLeave={handlePreviewLeave}

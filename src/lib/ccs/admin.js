@@ -10,13 +10,22 @@ import { newPasswordRecord, sanitizeEmail } from "./auth";
 import { getDb } from "./drizzle-client";
 import { toPublicProfile } from "./publicUser";
 import { formatStatNumber, mergeLandingCms } from "./landingDefaults";
+import { sanitizeBadgeColorsInput } from "./badgeColors";
 import {
+  clampMediaField,
   insertSession,
+  isHandleTakenElsewhere,
   makeUserId,
+  PROFILE_PATCH_FIELD_KEYS,
   resolveViewerFromSession,
   uniqueHandle,
 } from "./store";
-import { CCS_OLFU_UNIVERSITY, DEFAULT_PROFILE_FIELD_OPTIONS, mergeProfileFieldOptions } from "./profileOptions";
+import {
+  CCS_OLFU_UNIVERSITY,
+  DEFAULT_PROFILE_FIELD_OPTIONS,
+  mergeProfileFieldOptions,
+  sanitizeProfileSelectFields,
+} from "./profileOptions";
 import * as schema from "./schema";
 
 export const ROLE_STUDENT = "student";
@@ -25,6 +34,9 @@ export const ROLE_ADMIN = "admin";
 
 const STAFF_ROLES = new Set([ROLE_MODERATOR, ROLE_ADMIN]);
 
+/** Profile fields moderators/admins may set via PATCH (plus status & badges below). */
+const STAFF_PROFILE_PATCH_KEYS = new Set([...PROFILE_PATCH_FIELD_KEYS, "status", "badges"]);
+
 export const DEFAULT_SITE_SETTINGS = {
   registrationOpen: true,
   guestReadOnly: true,
@@ -32,6 +44,8 @@ export const DEFAULT_SITE_SETTINGS = {
   autoModLinkPosts: false,
   bannedWords: [],
   profileFieldOptions: DEFAULT_PROFILE_FIELD_OPTIONS,
+  /** Map of badge label → accent hex (#RRGGBB) for pills in the forum UI. */
+  badgeColors: {},
 };
 
 /** Resolve full row (incl. role/banned) — store.resolveViewerFromSession returns a domain shim. */
@@ -201,10 +215,15 @@ export async function listAudit({ limit = 100 } = {}) {
 export async function getSiteSettings() {
   const db = await getDb();
   const [row] = await db.select().from(schema.ccsSiteSettings).where(eq(schema.ccsSiteSettings.key, "site")).limit(1);
-  if (!row) return { ...DEFAULT_SITE_SETTINGS, profileFieldOptions: mergeProfileFieldOptions(null) };
+  if (!row) {
+    const merged = { ...DEFAULT_SITE_SETTINGS, profileFieldOptions: mergeProfileFieldOptions(null) };
+    merged.badgeColors = sanitizeBadgeColorsInput(merged.badgeColors || {});
+    return merged;
+  }
   const v = row.value && typeof row.value === "object" ? row.value : {};
   const merged = { ...DEFAULT_SITE_SETTINGS, ...v };
   merged.profileFieldOptions = mergeProfileFieldOptions(merged.profileFieldOptions);
+  merged.badgeColors = sanitizeBadgeColorsInput(merged.badgeColors || {});
   return merged;
 }
 
@@ -232,6 +251,15 @@ export async function setSiteSettings(actorId, patch) {
     });
   } else {
     next.profileFieldOptions = mergeProfileFieldOptions(next.profileFieldOptions || null);
+  }
+
+  if (patch && typeof patch === "object" && patch.badgeColors && typeof patch.badgeColors === "object") {
+    next.badgeColors = sanitizeBadgeColorsInput({
+      ...sanitizeBadgeColorsInput(current.badgeColors || {}),
+      ...patch.badgeColors,
+    });
+  } else {
+    next.badgeColors = sanitizeBadgeColorsInput(next.badgeColors || {});
   }
 
   const now = Date.now();
@@ -350,6 +378,66 @@ export async function setUserStatus(actor, targetUserId, status) {
 
   await db.update(schema.ccsUsers).set({ profile: merged }).where(eq(schema.ccsUsers.id, targetUserId));
   await appendAudit(actor.id, "user_status_update", targetUserId, { length: s.length });
+
+  return { user: await getUserDetailById(targetUserId) };
+}
+
+/** Staff merges public profile fields (and status/badges) without username cooldown limits. */
+export async function patchUserProfileAsStaff(actor, targetUserId, incoming) {
+  if (!STAFF_ROLES.has(actor.role)) return { error: "forbidden", status: 403 };
+  if (!incoming || typeof incoming !== "object") return { error: "invalid_body", status: 400 };
+
+  const db = await getDb();
+  const [target] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, targetUserId)).limit(1);
+  if (!target) return { error: "not_found", status: 404 };
+
+  const prevBase = typeof target.profile === "object" && target.profile ? target.profile : {};
+  const baseline = { ...DEFAULT_PROFILE, ...prevBase, id: target.id };
+  const next = { ...baseline };
+
+  try {
+    for (const [k, v] of Object.entries(incoming)) {
+      if (!STAFF_PROFILE_PATCH_KEYS.has(k)) continue;
+
+      if (k === "handle") {
+        const h =
+          String(v ?? "")
+            .trim()
+            .replace(/[^\w.]/g, "_")
+            .slice(0, 32);
+        next.handle = h || baseline.handle || next.handle;
+      } else if (k === "name") next.name = String(v ?? "").slice(0, 80);
+      else if (k === "bio") next.bio = String(v ?? "").slice(0, 280);
+      else if (k === "status") next.status = String(v ?? "").slice(0, 80);
+      else if (k === "badges") {
+        const arr = Array.isArray(v) ? v : [];
+        next.badges = arr.map((x) => String(x || "").trim().slice(0, 40)).filter(Boolean).slice(0, 8);
+      } else if (k === "signature") next.signature = String(v ?? "").slice(0, 280);
+      else if (k === "signatureLink") {
+        const s = String(v ?? "").trim().slice(0, 4096);
+        next.signatureLink = /^https?:\/\//i.test(s) ? s : "";
+      } else if (k === "signatureImage" || k === "avatarImage" || k === "bannerImage") next[k] = clampMediaField(k, v);
+      else if (k === "college") next.college = String(v ?? "").slice(0, 120);
+      else if (k === "program" || k === "year" || k === "campus" || k === "focus" || k === "org") next[k] = String(v ?? "").slice(0, 120);
+      else if (k === "avatarColor" || k === "avatarAccent" || k === "bannerColor" || k === "bannerAccent") {
+        next[k] = String(v ?? "").slice(0, 36);
+      }
+    }
+  } catch (e) {
+    return { error: e.message || "Image too large.", status: 413 };
+  }
+
+  if (await isHandleTakenElsewhere(db, next.handle, targetUserId))
+    return { error: "handle_taken", status: 409, message: "That username handle is already in use." };
+
+  const fieldOpts = await getMergedProfileFieldOptions();
+  sanitizeProfileSelectFields(next, fieldOpts);
+  next.university = CCS_OLFU_UNIVERSITY;
+  /** Admin username changes don't reset student cooldown bookkeeping. */
+  next.handleChangedAt = baseline.handleChangedAt;
+
+  await db.update(schema.ccsUsers).set({ profile: next }).where(eq(schema.ccsUsers.id, targetUserId));
+  await appendAudit(actor.id, "user_profile_staff_patch", targetUserId, { keys: Object.keys(incoming) });
 
   return { user: await getUserDetailById(targetUserId) };
 }
@@ -517,6 +605,7 @@ export async function getPublicLandingBundle() {
   const cms = await getLandingCmsMerged();
   const raw = await landingStats(db);
 
+  const siteForBadges = await getSiteSettings();
   const stats = [
     { k: cms.statLabels.members, v: formatStatNumber(raw.members), raw: raw.members },
     { k: cms.statLabels.threads, v: formatStatNumber(raw.threads), raw: raw.threads },
@@ -526,6 +615,7 @@ export async function getPublicLandingBundle() {
   return {
     cms,
     stats,
+    badgeColors: siteForBadges.badgeColors && typeof siteForBadges.badgeColors === "object" ? siteForBadges.badgeColors : {},
     updatedAt: meta ? Number(meta.updatedAt) || null : null,
     counts: raw,
   };

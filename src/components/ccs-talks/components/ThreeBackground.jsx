@@ -86,7 +86,7 @@ const FRAG = `
 
 export function ThreeBackground({ active = true, accent = "#ff6080", light = false }) {
   const canvasRef = useRef(null);
-  const threeLoaded = useScript(THREE_CDN);
+  const threeLoaded = useScript(THREE_CDN, { expectGlobal: "THREE" });
   const animRef = useRef(null);
   const { pixelRatioCap, fpsCap, blobMultiplier } = useLowPower();
 

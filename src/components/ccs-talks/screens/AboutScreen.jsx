@@ -6,15 +6,28 @@ import { THEME } from "../theme";
 import { useScript } from "../useScript";
 
 export function AboutScreen() {
-  const gsapLoaded = useScript(GSAP_CDN);
+  const gsapLoaded = useScript(GSAP_CDN, { expectGlobal: "gsap" });
   const headRef = useRef(null);
   const subRef = useRef(null);
 
   useEffect(() => {
-    if (!gsapLoaded || typeof window === "undefined" || !window.gsap) return;
+    if (!gsapLoaded) return;
+    const reveal = () => {
+      const h = headRef.current,
+        p = subRef.current;
+      if (h) h.style.opacity = "1";
+      if (p) p.style.opacity = "1";
+    };
+    if (typeof window === "undefined" || !window.gsap) {
+      reveal();
+      return;
+    }
     const gsap = window.gsap;
-    gsap.fromTo(headRef.current, { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1, ease: "power3.out" });
-    gsap.fromTo(subRef.current, { opacity: 0 }, { opacity: 1, duration: 0.8, delay: 0.4 });
+    const h = headRef.current,
+      p = subRef.current;
+    if (!h || !p) return;
+    gsap.fromTo(h, { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 1, ease: "power3.out" });
+    gsap.fromTo(p, { opacity: 0 }, { opacity: 1, duration: 0.8, delay: 0.4 });
   }, [gsapLoaded]);
 
   return (

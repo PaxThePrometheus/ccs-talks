@@ -473,10 +473,13 @@ const PROFILE_KEYS = new Set([
   "bannerImage",
 ]);
 
+/** User + staff profile patch field names (values applied in `patchAccountBundles` / admin editor). */
+export const PROFILE_PATCH_FIELD_KEYS = PROFILE_KEYS;
+
 const MAX_DATA_URL_LEN = 360_000;
 const MAX_REMOTE_IMAGE_URL_LEN = 4096;
 
-function clampMediaField(key, raw) {
+export function clampMediaField(key, raw) {
   if (raw == null || raw === "") return "";
   const v = typeof raw === "string" ? raw : String(raw);
   if (/^data:image\//i.test(v)) {
@@ -529,7 +532,7 @@ export async function getAccountWire(token) {
   return accountWireFromRow(row);
 }
 
-async function isHandleTakenElsewhere(db, handle, excludeUserId) {
+export async function isHandleTakenElsewhere(db, handle, excludeUserId) {
   const h = String(handle || "").trim().toLowerCase();
   if (!h) return false;
   const others = await db

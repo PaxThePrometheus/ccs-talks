@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { CcsMarkdown } from "@/components/ccs-talks/components/CcsMarkdown";
+import { badgeAccentForLabel, badgePillColors } from "@/lib/ccs/badgeColors";
 import { AdminLandingPane } from "./AdminLandingPane";
 import { adminTheme as t, btn, panel, panelHeader, row, tag } from "./adminUi";
 
@@ -23,11 +25,69 @@ async function jsonFetch(url, opts = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = new Error(data?.error || `Request failed (${res.status})`);
+    const err = new Error(data?.message || data?.error || `Request failed (${res.status})`);
     err.status = res.status;
     throw err;
   }
   return data;
+}
+
+function serializeBadgeColorsText(map) {
+  if (!map || typeof map !== "object") return "";
+  return Object.entries(map)
+    .filter(([, v]) => typeof v === "string" && v.trim())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k} ${String(v).trim()}`)
+    .join("\n");
+}
+
+/** Lines like `Dean's list #FF6080` (label … hex). */
+function parseBadgeColorsText(text) {
+  const out = {};
+  const raw = text == null ? "" : String(text);
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const hm = trimmed.match(/^(.*?)\s+(#[0-9a-f]{3,6})\s*$/i);
+    if (!hm) continue;
+    const label = hm[1].trim();
+    if (!label) continue;
+    out[label] = hm[2];
+  }
+  return out;
+}
+
+/** Tokens for markdown preview in dark admin chrome. */
+const ANNOUNCE_MD_TOKENS = {
+  text: t.text,
+  textMuted: t.muted,
+  textStrong: t.textStrong,
+  accent: t.accent,
+  border: t.border,
+  surfaceAlt: t.surfaceAlt,
+};
+
+function staffProfileSnapshot(pr) {
+  const p = pr || {};
+  return {
+    name: String(p.name ?? ""),
+    handle: String(p.handle ?? ""),
+    bio: String(p.bio ?? ""),
+    college: String(p.college ?? ""),
+    program: String(p.program ?? ""),
+    campus: String(p.campus ?? ""),
+    year: String(p.year ?? ""),
+    focus: String(p.focus ?? ""),
+    org: String(p.org ?? ""),
+    signature: String(p.signature ?? ""),
+    signatureLink: String(p.signatureLink ?? ""),
+    avatarImage: String(p.avatarImage ?? ""),
+    bannerImage: String(p.bannerImage ?? ""),
+    avatarColor: String(p.avatarColor ?? ""),
+    avatarAccent: String(p.avatarAccent ?? ""),
+    bannerColor: String(p.bannerColor ?? ""),
+    bannerAccent: String(p.bannerAccent ?? ""),
+  };
 }
 
 export function AdminConsole({ viewer, inviteRequired }) {
@@ -161,23 +221,37 @@ function OverviewPane({ onError }) {
 }
 
 /** ---------- users ---------- */
-function BadgesEditor({ userId, badges, catalog, onSave }) {
+function BadgesEditor({ userId, badges, catalog, badgeColors, onSave }) {
   const [draft, setDraft] = useState("");
   const list = Array.isArray(badges) ? badges : [];
+  const bpTok = { text: t.text, border: t.border, surfaceAlt: t.surfaceAlt };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0, maxWidth: 420 }}>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {list.map((b) => (
-          <button
-            key={b}
-            type="button"
-            onClick={() => onSave(list.filter((x) => x !== b))}
-            style={{ ...tag("neutral"), cursor: "pointer", border: "none" }}
-            title="Remove"
-          >
-            {b} ×
-          </button>
-        ))}
+        {list.map((b) => {
+          const acc = badgeAccentForLabel(badgeColors || {}, b);
+          const pill = badgePillColors(acc, false, bpTok);
+          return (
+            <button
+              key={b}
+              type="button"
+              onClick={() => onSave(list.filter((x) => x !== b))}
+              style={{
+                cursor: "pointer",
+                border: `1px solid ${pill.border}`,
+                background: pill.background,
+                color: pill.color,
+                padding: "4px 10px",
+                fontSize: 12,
+                fontWeight: 800,
+                borderRadius: 999,
+              }}
+              title="Remove"
+            >
+              {b} ×
+            </button>
+          );
+        })}
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         <input list={`badge-cat-${userId}`} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add badge…" style={{ ...inp(160), fontSize: 12 }} />
@@ -207,12 +281,116 @@ function BadgesEditor({ userId, badges, catalog, onSave }) {
   );
 }
 
+function StaffForumProfileFold({ user, patchUser }) {
+  const [form, setForm] = useState(() => staffProfileSnapshot(user.profile));
+
+  useEffect(() => {
+    setForm(staffProfileSnapshot(user.profile));
+  }, [user.id]); // Avoid resetting drafts when list rows re-render with new profile object refs.
+
+  const setField = useCallback((k) => (e) => {
+    const v = e.target?.value ?? "";
+    setForm((s) => ({ ...s, [k]: typeof v === "string" ? v : String(v) }));
+  }, []);
+
+  async function saveProfile() {
+    const next = await patchUser(user.id, { profile: form });
+    if (next?.profile) setForm(staffProfileSnapshot(next.profile));
+  }
+
+  const fld = (
+    <>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>NAME</div>
+        <input value={form.name} onChange={setField("name")} style={{ ...inp(200), fontSize: 12 }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>HANDLE</div>
+        <input value={form.handle} onChange={setField("handle")} style={{ ...inp(200), fontSize: 12 }} />
+      </div>
+      <div style={{ gridColumn: "1 / -1" }}>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>BIO</div>
+        <textarea value={form.bio} onChange={setField("bio")} rows={3} style={{ ...inp(520), height: 72, resize: "vertical", fontFamily: "inherit", fontSize: 12 }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>COLLEGE</div>
+        <input value={form.college} onChange={setField("college")} style={{ ...inp(200), fontSize: 12 }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>PROGRAM</div>
+        <input value={form.program} onChange={setField("program")} style={{ ...inp(200), fontSize: 12 }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>CAMPUS</div>
+        <input value={form.campus} onChange={setField("campus")} style={{ ...inp(200), fontSize: 12 }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>YEAR</div>
+        <input value={form.year} onChange={setField("year")} style={{ ...inp(200), fontSize: 12 }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>FOCUS</div>
+        <input value={form.focus} onChange={setField("focus")} style={{ ...inp(200), fontSize: 12 }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>ORG</div>
+        <input value={form.org} onChange={setField("org")} style={{ ...inp(200), fontSize: 12 }} />
+      </div>
+      <div style={{ gridColumn: "1 / -1" }}>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>SIGNATURE</div>
+        <textarea value={form.signature} onChange={setField("signature")} rows={2} style={{ ...inp(520), height: 52, resize: "vertical", fontFamily: "inherit", fontSize: 12 }} />
+      </div>
+      <div style={{ gridColumn: "1 / -1" }}>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>SIGNATURE LINK (https…)</div>
+        <input value={form.signatureLink} onChange={setField("signatureLink")} style={{ ...inp(520), fontSize: 12 }} />
+      </div>
+      <div style={{ gridColumn: "1 / -1" }}>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>AVATAR IMAGE URL</div>
+        <input value={form.avatarImage} onChange={setField("avatarImage")} style={{ ...inp(520), fontSize: 12 }} />
+      </div>
+      <div style={{ gridColumn: "1 / -1" }}>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>BANNER IMAGE URL</div>
+        <input value={form.bannerImage} onChange={setField("bannerImage")} style={{ ...inp(520), fontSize: 12 }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>AVATAR ACCENT</div>
+        <input value={form.avatarAccent} onChange={setField("avatarAccent")} placeholder="#ff6080" style={{ ...inp(200), fontSize: 12 }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>AVATAR COLOR</div>
+        <input value={form.avatarColor} onChange={setField("avatarColor")} placeholder="#9b0028" style={{ ...inp(200), fontSize: 12 }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>BANNER ACCENT</div>
+        <input value={form.bannerAccent} onChange={setField("bannerAccent")} placeholder="#ff3a6e" style={{ ...inp(200), fontSize: 12 }} />
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>BANNER COLOR</div>
+        <input value={form.bannerColor} onChange={setField("bannerColor")} placeholder="#3a0014" style={{ ...inp(200), fontSize: 12 }} />
+      </div>
+      <div style={{ gridColumn: "1 / -1", marginTop: 4 }}>
+        <button type="button" onClick={() => void saveProfile()} style={btn("solid")}>
+          Save profile
+        </button>
+      </div>
+    </>
+  );
+
+  return (
+    <details style={{ marginTop: 12 }}>
+      <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 900, color: t.textStrong, userSelect: "none" }}>Forum profile (staff)</summary>
+      <div style={{ marginTop: 12, display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", maxWidth: 720 }}>{fld}</div>
+    </details>
+  );
+}
+
 function UsersPane({ viewer, onError, inviteRequired }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [badgeCatalog, setBadgeCatalog] = useState([]);
+  const [siteBadgeColors, setSiteBadgeColors] = useState({});
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -247,13 +425,31 @@ function UsersPane({ viewer, onError, inviteRequired }) {
     };
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    void jsonFetch("/api/admin/site")
+      .then((d) => {
+        if (!alive) return;
+        const bc = d?.settings?.badgeColors;
+        setSiteBadgeColors(bc && typeof bc === "object" ? bc : {});
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   async function patchUser(id, patch) {
     try {
       const data = await jsonFetch(`/api/admin/users/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
-      if (data?.user) setUsers((xs) => xs.map((u) => (u.id === id ? data.user : u)));
+      if (data?.user) {
+        setUsers((xs) => xs.map((u) => (u.id === id ? data.user : u)));
+        return data.user;
+      }
     } catch (e) {
       onError(e);
     }
+    return null;
   }
 
   async function removeUser(id) {
@@ -317,9 +513,11 @@ function UsersPane({ viewer, onError, inviteRequired }) {
                     userId={u.id}
                     badges={u.profile?.badges}
                     catalog={badgeCatalog}
-                    onSave={(next) => patchUser(u.id, { badges: next })}
+                    badgeColors={siteBadgeColors}
+                    onSave={(next) => void patchUser(u.id, { badges: next })}
                   />
                 </div>
+                {(viewer.role === "admin" || viewer.role === "moderator") ? <StaffForumProfileFold user={u} patchUser={patchUser} /> : null}
               </div>
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -546,7 +744,11 @@ function AnnouncementsPane({ viewer, onError }) {
           <header style={panelHeader}>Post announcement</header>
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
             <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" style={inp(520)} />
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Body" rows={6} style={{ ...inp(520), height: 140, resize: "vertical", fontFamily: "inherit" }} />
+            <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Markdown body…" rows={6} style={{ ...inp(520), height: 140, resize: "vertical", fontFamily: "inherit" }} />
+            <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.5 }}>
+              Markdown supported: <strong>**bold**</strong>, lists, <code style={code}>code</code>, links, tables. Mention users with{" "}
+              <code style={code}>@handle</code>.
+            </div>
             <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: t.text }}>
               <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
               Pin to top
@@ -570,7 +772,9 @@ function AnnouncementsPane({ viewer, onError }) {
           <div key={a.id} style={row}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 900, color: t.textStrong }}>{a.pinned ? "📌 " : ""}{a.title}</div>
-              <div style={{ marginTop: 6, color: t.muted, fontSize: 13, whiteSpace: "pre-wrap" }}>{a.body}</div>
+              <div style={{ marginTop: 8, fontSize: 13, color: t.text }}>
+                <CcsMarkdown source={a.body || ""} accentColor={t.accent} tokens={ANNOUNCE_MD_TOKENS} />
+              </div>
               <div style={{ marginTop: 8, fontSize: 11, color: t.muted }}>{new Date(a.createdAt).toLocaleString()}</div>
             </div>
             {isAdmin ? (
@@ -755,6 +959,28 @@ function SitePane({ viewer, onError }) {
             }}
             style={{ ...inp(280), height: 88, resize: "vertical", fontFamily: "var(--font-geist-mono, monospace)" }}
           />
+        </div>
+
+        <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${t.border}` }}>
+          <div style={{ ...row, marginTop: 4, alignItems: "start", flexWrap: "wrap", gap: 12 }}>
+            <div style={{ flex: "1 1 240px", minWidth: 0 }}>
+              <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>Badge colours</div>
+              <div style={{ color: t.muted, fontSize: 12, marginTop: 4 }}>
+                One line per badge label: <code style={code}>Label #RRGGBB</code> (or shorthand <code style={code}>#RGB</code>). Shown on profile and hover cards after the next landing refresh.
+              </div>
+            </div>
+            <textarea
+              key={JSON.stringify(settings.badgeColors || {})}
+              disabled={!isAdmin}
+              defaultValue={serializeBadgeColorsText(settings.badgeColors)}
+              onBlur={(e) => {
+                save({ badgeColors: parseBadgeColorsText(e.target.value) });
+              }}
+              placeholder={`Dean's Lister #FF6080`}
+              spellCheck={false}
+              style={{ ...inp(360), height: 120, resize: "vertical", fontFamily: "var(--font-geist-mono, monospace)", fontSize: 12 }}
+            />
+          </div>
         </div>
 
         <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${t.border}` }}>

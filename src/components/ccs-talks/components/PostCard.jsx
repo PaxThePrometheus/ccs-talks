@@ -5,7 +5,8 @@ import { GSAP_CDN } from "../cdn";
 import { useScript } from "../useScript";
 import { useAppState } from "../state/AppState";
 import { Icon } from "../ui/Icon";
-import { MentionBody, buildHandleDirectory } from "./MentionBody";
+import { CcsMarkdown } from "./CcsMarkdown";
+import { buildHandleDirectory } from "./MentionBody";
 import { SignatureFooter } from "./SignatureFooter";
 
 export function PostCard({
@@ -21,7 +22,7 @@ export function PostCard({
   readOnly = false,
 }) {
   const cardRef = useRef(null);
-  const gsapLoaded = useScript(GSAP_CDN);
+  const gsapLoaded = useScript(GSAP_CDN, { expectGlobal: "gsap" });
   const { tokens, prefs, users, visitUserProfile } = useAppState();
   const isLight = prefs.mode === "light";
   const handleDir = useMemo(() => buildHandleDirectory(users), [users]);
@@ -142,15 +143,15 @@ export function PostCard({
       <div style={{ height: 1, background: dividerColor }} />
 
       <div style={{ padding: "0.95rem 1.2rem 1rem" }}>
-        <p style={{ color: tokens.text, fontSize: 15, lineHeight: 1.65, margin: 0 }}>
-          <MentionBody
-            text={post.content}
+        <div style={{ fontSize: 15, margin: 0 }}>
+          <CcsMarkdown
+            source={post.content}
+            accentColor={tokens.accent}
             handleToUserId={handleDir}
-            color={tokens.accent}
             onVisitUser={readOnly ? undefined : visitUserProfile}
-            style={{ whiteSpace: "pre-wrap" }}
+            tokens={tokens}
           />
-        </p>
+        </div>
         {post.imageUrl ? (
           <div style={{ marginTop: 10 }}>
             <img

@@ -37,6 +37,12 @@ export function AppStateProvider({ children }) {
   const [profileVisitUserId, setProfileVisitUserId] = useState(null);
   /** Milliseconds epoch when username edit is allowed again (server: `usernameCooldownUntil`). */
   const [usernameCooldownUntil, setUsernameCooldownUntil] = useState(null);
+  /** Badge label → hex map from `/api/landing` (Forum poll keeps it fresh). */
+  const [badgeColors, setBadgeColors] = useState({});
+
+  const applyLandingExtras = useCallback((d) => {
+    if (d?.badgeColors && typeof d.badgeColors === "object") setBadgeColors(d.badgeColors);
+  }, []);
 
   /** Skip first debounced PATCH after we just applied server snapshot (prevents PATCH loop). */
   const lastSyncedExtrasRef = useRef("");
@@ -165,6 +171,13 @@ export function AppStateProvider({ children }) {
         if (feed.users && typeof feed.users === "object") setFeedUsersById((prev) => ({ ...prev, ...feed.users }));
 
         if (me?.profile) hydrateAccountFromServer(me);
+
+        try {
+          const ld = await api.getLanding();
+          if (!cancelled && ld?.badgeColors && typeof ld.badgeColors === "object") applyLandingExtras(ld);
+        } catch {
+          /* keep defaults */
+        }
       } catch {
         // Offline / SSR mismatch — defaults + local cache stay authoritative.
       }
@@ -175,7 +188,7 @@ export function AppStateProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [setPosts, setIsAuthed, hydrateAccountFromServer]);
+  }, [setPosts, setIsAuthed, hydrateAccountFromServer, applyLandingExtras]);
 
   /** Light presence pings while signed in — other clients can subscribe via `/api/presence`. */
   useEffect(() => {
@@ -472,6 +485,8 @@ export function AppStateProvider({ children }) {
       signOut,
       hydrateAccountFromServer,
       persistFullProfile,
+      badgeColors,
+      applyLandingExtras,
       // moderation
       reports,
       resolveReport,
@@ -506,6 +521,8 @@ export function AppStateProvider({ children }) {
       loadCommentsFromServer,
       hydrateAccountFromServer,
       persistFullProfile,
+      badgeColors,
+      applyLandingExtras,
     ]
   );
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

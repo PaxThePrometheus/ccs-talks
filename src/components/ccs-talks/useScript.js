@@ -3,29 +3,30 @@
 import { useEffect, useState } from "react";
 
 /**
- * Module-level cache for in-flight / completed script loads.
- * Without this, two components calling `useScript(SAME_SRC)` could each set
- * `loaded=true` based on "is the <script> tag in the DOM?" — a check that's
- * true *before* the script has actually executed. The second consumer would
- * then run its effect with `loaded=true` while `window.gsap` / `window.THREE`
- * are still undefined, silently skip its animation, and leave the UI broken
- * until something forced a re-mount (e.g., a theme toggle).
+ * Waits until a `<script>` for `src` has settled, then notifies all consumers.
  *
- * The cache normalises that: every consumer waits on the SAME `onload` and
- * flips state only after the script has truly executed.
+ * Options:
+ * - `expectGlobal` — `"THREE"` | `"gsap"` etc. Ensures `window[expectGlobal]`
+ *   exists before we flip ready (CDN race / reused `<script>` where `load` never
+ *   fires twice). Gives up after a timeout so callers can still render fallback UI.
+ *
+ * Guards one shared polling interval per `src` (`entry.pollId`).
  */
-const cache = new Map(); // src -> { loaded: boolean, listeners: Set<() => void> }
+const cache = new Map(); // src -> { loaded, listeners: Set<fn>, pollId?: number|null }
 
 function getEntry(src) {
   let entry = cache.get(src);
   if (!entry) {
-    entry = { loaded: false, listeners: new Set() };
+    entry = { loaded: false, listeners: new Set(), pollId: null };
     cache.set(src, entry);
   }
   return entry;
 }
 
-export function useScript(src) {
+/** @param {{ expectGlobal?: string }} [options] */
+export function useScript(src, options = {}) {
+  const expectGlobal = options.expectGlobal;
+
   const [loaded, setLoaded] = useState(() => {
     if (typeof window === "undefined") return false;
     return !!cache.get(src)?.loaded;
@@ -40,16 +41,51 @@ export function useScript(src) {
       return undefined;
     }
 
-    const onLoad = () => {
+    const finalize = () => {
+      if (entry.pollId != null) {
+        window.clearInterval(entry.pollId);
+        entry.pollId = null;
+      }
+      if (entry.loaded) return;
       entry.loaded = true;
+      document.querySelector(`script[data-ccs-src="${src}"]`)?.setAttribute("data-ccs-loaded", "1");
       const ls = Array.from(entry.listeners);
       entry.listeners.clear();
       ls.forEach((fn) => fn());
     };
 
+    const settle = () => {
+      if (entry.loaded) return;
+
+      if (!expectGlobal) {
+        finalize();
+        return;
+      }
+
+      if (typeof window !== "undefined" && window[expectGlobal]) {
+        finalize();
+        return;
+      }
+
+      if (entry.pollId != null) return;
+
+      const t0 = Date.now();
+      const maxMs = 9000;
+
+      entry.pollId = window.setInterval(() => {
+        const ok = typeof window !== "undefined" && !!window[expectGlobal];
+        if (ok || Date.now() - t0 > maxMs) {
+          if (entry.pollId != null) {
+            window.clearInterval(entry.pollId);
+            entry.pollId = null;
+          }
+          finalize();
+        }
+      }, 40);
+    };
+
     let existing = document.querySelector(`script[data-ccs-src="${src}"]`);
     if (!existing) {
-      // Reuse a regular <script src> if the page or another lib already added one.
       const native = document.querySelector(`script[src="${src}"]`);
       if (native) {
         existing = native;
@@ -62,29 +98,16 @@ export function useScript(src) {
       s.src = src;
       s.async = true;
       s.setAttribute("data-ccs-src", src);
-      s.addEventListener("load", onLoad, { once: true });
-      s.addEventListener("error", () => {
-        // Don't keep callers stuck at opacity:0 forever. Treat error as
-        // "loaded" so consumers can render their fallback path.
-        onLoad();
-      }, { once: true });
+      s.addEventListener("load", settle, { once: true });
+      s.addEventListener("error", settle, { once: true });
       document.head.appendChild(s);
+    } else if (existing.getAttribute("data-ccs-loaded") === "1") {
+      settle();
     } else {
-      // Tag exists. It may or may not have finished executing already. Best
-      // signal we have is the data-ccs-loaded marker we set after our onload
-      // listener fires. If it's there, we're done; otherwise wait.
-      if (existing.getAttribute("data-ccs-loaded") === "1") {
-        onLoad();
-      } else {
-        existing.addEventListener(
-          "load",
-          () => {
-            existing.setAttribute("data-ccs-loaded", "1");
-            onLoad();
-          },
-          { once: true },
-        );
-      }
+      existing.addEventListener("load", settle, { once: true });
+      existing.addEventListener("error", settle, { once: true });
+      /** Script might already have executed (`load` will not replay). */
+      queueMicrotask(() => settle());
     }
 
     const cb = () => setLoaded(true);
@@ -92,7 +115,7 @@ export function useScript(src) {
     return () => {
       entry.listeners.delete(cb);
     };
-  }, [src]);
+  }, [src, expectGlobal]);
 
   return loaded;
 }

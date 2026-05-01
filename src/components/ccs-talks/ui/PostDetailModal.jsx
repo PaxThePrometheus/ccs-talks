@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { THEME } from "../theme";
 import { useAppState } from "../state/AppState";
 import { Icon } from "./Icon";
-import { MentionBody, buildHandleDirectory } from "../components/MentionBody";
+import { CcsMarkdown } from "../components/CcsMarkdown";
+import { buildHandleDirectory } from "../components/MentionBody";
 import { SignatureFooter } from "../components/SignatureFooter";
 import { FeedComposer } from "./FeedComposer";
 
@@ -122,13 +123,18 @@ export function PostDetailModal({ open, postId, onClose }) {
               {editing ? (
                 <textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={4} style={inputStyle(true)} />
               ) : (
-                <div style={{ color: "rgba(240,220,220,0.90)", fontSize: 15, lineHeight: 1.65 }}>
-                  <MentionBody
-                    text={post.content}
+                <div style={{ fontSize: 15, lineHeight: 1.65, color: "rgba(240,220,220,0.92)" }}>
+                  <CcsMarkdown
+                    source={post.content}
+                    accentColor="#ff9ab0"
                     handleToUserId={handleDir}
-                    color="#ff9ab0"
                     onVisitUser={visitUserProfile}
-                    style={{ whiteSpace: "pre-wrap" }}
+                    tokens={{
+                      accent: tokens.accent,
+                      text: "rgba(240,220,220,0.92)",
+                      textMuted: "rgba(240,200,205,0.72)",
+                      textStrong: "#fff",
+                    }}
                   />
                 </div>
               )}
@@ -198,13 +204,18 @@ export function PostDetailModal({ open, postId, onClose }) {
                     <div style={{ color: "rgba(240,220,220,0.6)", fontSize: 12 }}>@{u?.handle ?? "unknown"}</div>
                     <div style={{ marginLeft: "auto", color: "rgba(240,220,220,0.45)", fontSize: 11 }}>{new Date(c.ts).toLocaleString()}</div>
                   </div>
-                  <div style={{ marginTop: 6, color: "rgba(240,220,220,0.82)", fontSize: 13, lineHeight: 1.55 }}>
-                    <MentionBody
-                      text={c.text}
+                  <div style={{ marginTop: 6, fontSize: 13, lineHeight: 1.55 }}>
+                    <CcsMarkdown
+                      source={c.text}
+                      accentColor="#ff9ab0"
                       handleToUserId={handleDir}
-                      color="#ff9ab0"
                       onVisitUser={visitUserProfile}
-                      style={{ whiteSpace: "pre-wrap" }}
+                      tokens={{
+                        accent: tokens.accent,
+                        text: "rgba(240,220,220,0.85)",
+                        textMuted: "rgba(230,190,195,0.70)",
+                        textStrong: "#fff",
+                      }}
                     />
                   </div>
                   {c.imageUrl ? (

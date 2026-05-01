@@ -11,7 +11,7 @@ import { useScript } from "../useScript";
 const POLL_MS = 12_000;
 
 export function LandingScreen({ setPage }) {
-  const gsapLoaded = useScript(GSAP_CDN);
+  const gsapLoaded = useScript(GSAP_CDN, { expectGlobal: "gsap" });
   const heroRef = useRef(null);
   const subtitleRef = useRef(null);
   const ctaRef = useRef(null);
@@ -69,17 +69,31 @@ export function LandingScreen({ setPage }) {
   }, []);
 
   useEffect(() => {
-    if (!gsapLoaded || typeof window === "undefined" || !window.gsap) return;
-    if (prefs.reduceMotion) {
+    if (!gsapLoaded) return;
+    const reveal = () => {
       [heroRef, subtitleRef, ctaRef].forEach((r) => {
         if (r.current) r.current.style.opacity = "1";
       });
+    };
+    if (prefs.reduceMotion) {
+      reveal();
+      return;
+    }
+    if (typeof window === "undefined" || !window.gsap) {
+      reveal();
       return;
     }
     const gs = window.gsap;
-    gs.fromTo(heroRef.current, { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.85, ease: "back.out(1.4)" });
-    gs.fromTo(subtitleRef.current, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.7, delay: 0.18, ease: "back.out(1.2)" });
-    gs.fromTo(ctaRef.current, { opacity: 0, y: 14, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.65, delay: 0.32, ease: "back.out(1.6)" });
+    const a = heroRef.current,
+      b = subtitleRef.current,
+      c = ctaRef.current;
+    if (!a || !b || !c) {
+      reveal();
+      return;
+    }
+    gs.fromTo(a, { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.85, ease: "back.out(1.4)", immediateRender: true });
+    gs.fromTo(b, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.7, delay: 0.18, ease: "back.out(1.2)", immediateRender: true });
+    gs.fromTo(c, { opacity: 0, y: 14, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.65, delay: 0.32, ease: "back.out(1.6)", immediateRender: true });
   }, [gsapLoaded, prefs.reduceMotion]);
 
   const brandTitle = cms.brandName || APP_CONFIG.brand.name;

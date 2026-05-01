@@ -1,6 +1,7 @@
 "use client";
 
 import { defaultLandingCms } from "@/lib/ccs/landingDefaults";
+import { badgeAccentForLabel, badgePillColors } from "@/lib/ccs/badgeColors";
 import { useMemo, useState } from "react";
 import { useAppState } from "../state/AppState";
 import { ProfileEditModal } from "../ui/ProfileEditModal";
@@ -34,6 +35,7 @@ export function ProfileScreen() {
     publishPost,
     persistFullProfile,
     usernameCooldownUntil,
+    badgeColors,
   } = useAppState();
   const isLight = prefs.mode === "light";
   const [isEditing, setIsEditing] = useState(false);
@@ -240,7 +242,11 @@ export function ProfileScreen() {
             <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
               <ChipT tone="good" tokens={tokens}>{user.status}</ChipT>
               <ChipT tokens={tokens}>{user.year}</ChipT>
-              {(user.badges || []).slice(0, 3).map((b) => (<ChipT key={b} tokens={tokens}>{b}</ChipT>))}
+              {(user.badges || []).slice(0, 3).map((b) => (
+                <ChipT key={b} tokens={tokens} tone="badge" accentHex={badgeAccentForLabel(badgeColors || {}, b)} isLight={isLight}>
+                  {b}
+                </ChipT>
+              ))}
             </div>
           </div>
 
@@ -330,7 +336,11 @@ export function ProfileScreen() {
             <div style={{ marginTop: 12, ...panelStyle(tokens, isLight) }}>
               <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.2px" }}>Badges</div>
               <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {(user.badges || []).map((b) => (<Badge key={b}>{b}</Badge>))}
+                {(user.badges || []).map((b) => (
+                  <ChipT key={b} tokens={tokens} tone="badge" accentHex={badgeAccentForLabel(badgeColors || {}, b)} isLight={isLight}>
+                    {b}
+                  </ChipT>
+                ))}
               </div>
             </div>
           </div>
@@ -475,19 +485,61 @@ function Chip({ children, tone }) {
 }
 
 // Theme-aware variant for the new info plate
-function ChipT({ children, tone, tokens }) {
+function ChipT({ children, tone, tokens, accentHex, isLight }) {
+  if (tone === "badge") {
+    if (accentHex) {
+      const p = badgePillColors(accentHex, !!isLight, {
+        text: tokens.text,
+        border: tokens.border,
+        surfaceAlt: tokens.surfaceAlt,
+      });
+      return (
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "5px 10px",
+            borderRadius: 999,
+            border: `1px solid ${p.border}`,
+            background: p.background,
+            color: p.color,
+            fontSize: 12,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {children}
+        </span>
+      );
+    }
+    return (
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "5px 10px",
+          borderRadius: 999,
+          border: `1px solid ${tokens.border}`,
+          background: tokens.surfaceAlt,
+          color: tokens.text,
+          fontSize: 12,
+          fontWeight: 800,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {children}
+      </span>
+    );
+  }
+
   const bg = tone === "good"
     ? "linear-gradient(135deg, rgba(100,220,160,0.20), rgba(60,160,120,0.14))"
     : tokens.surfaceAlt;
   const border = tone === "good" ? "rgba(140,200,170,0.30)" : tokens.border;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 999, border: `1px solid ${border}`, background: bg, color: tokens.text, fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}>{children}</span>
-  );
-}
-
-function Badge({ children }) {
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", padding: "6px 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(20,0,8,0.42)", color: "rgba(255,255,255,0.88)", fontSize: 12, fontWeight: 800, letterSpacing: "-0.1px", backdropFilter: "blur(12px)" }}>{children}</span>
   );
 }
 

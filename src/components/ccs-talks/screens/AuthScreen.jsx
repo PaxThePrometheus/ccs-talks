@@ -8,7 +8,7 @@ import { useAppState } from "../state/AppState";
 import { APP_CONFIG } from "../config/appConfig";
 
 export function AuthScreen({ mode, setPage }) {
-  const gsapLoaded = useScript(GSAP_CDN);
+  const gsapLoaded = useScript(GSAP_CDN, { expectGlobal: "gsap" });
   const cardRef = useRef(null);
   const { tokens, prefs, signIn, refreshFeed, hydrateAccountFromServer } = useAppState();
   const isLight = prefs.mode === "light";
@@ -26,9 +26,11 @@ export function AuthScreen({ mode, setPage }) {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!gsapLoaded || typeof window === "undefined" || !window.gsap || !cardRef.current) return;
-    if (prefs.reduceMotion) { cardRef.current.style.opacity = "1"; return; }
-    window.gsap.fromTo(cardRef.current, { opacity: 0, y: 28, scale: 0.98 }, { opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.2)" });
+    const el = cardRef.current;
+    if (!el || !gsapLoaded) return;
+    if (prefs.reduceMotion) return;
+    if (typeof window === "undefined" || !window.gsap) return;
+    window.gsap.fromTo(el, { opacity: 0, y: 28, scale: 0.98 }, { opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "back.out(1.2)", immediateRender: true });
   }, [gsapLoaded, mode, prefs.reduceMotion]);
 
   useEffect(() => {
@@ -155,7 +157,7 @@ export function AuthScreen({ mode, setPage }) {
             width: "100%",
             maxWidth: 440,
             backdropFilter: "blur(16px)",
-            opacity: 0,
+            opacity: 1,
             boxShadow: isLight ? "0 18px 40px rgba(60,0,20,0.10)" : "0 30px 70px rgba(0,0,0,0.35)",
             color: tokens.text,
           }}

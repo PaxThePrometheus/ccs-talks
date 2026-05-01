@@ -4,6 +4,7 @@ import { ensureReady } from "@/lib/ccs/drizzle-client";
 import {
   deleteUserCascade,
   getUserDetailById,
+  patchUserProfileAsStaff,
   requireStaff,
   setUserBadges,
   setUserBanned,
@@ -48,6 +49,12 @@ export async function PATCH(request, { params }) {
 
   if (typeof body.banned === "boolean") {
     const out = await setUserBanned(gate.row, userId, body.banned, body.bannedReason || "");
+    if (out?.error) return NextResponse.json({ error: out.message || out.error }, { status: out.status || 400 });
+    return NextResponse.json(out);
+  }
+
+  if (typeof body.profile === "object" && body.profile !== null && !Array.isArray(body.profile)) {
+    const out = await patchUserProfileAsStaff(gate.row, userId, body.profile);
     if (out?.error) return NextResponse.json({ error: out.message || out.error }, { status: out.status || 400 });
     return NextResponse.json(out);
   }

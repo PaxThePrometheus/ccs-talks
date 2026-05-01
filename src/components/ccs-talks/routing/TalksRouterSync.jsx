@@ -24,6 +24,7 @@ export function TalksRouterSync() {
     profileVisitUserId,
     profile,
     users,
+    talksPathnameHydration,
   } = useAppState();
 
   // URL → React state (initial load, back/forward, external links).
@@ -36,52 +37,49 @@ export function TalksRouterSync() {
       return;
     }
 
-    const parsed = parseTalksPathname(pathname);
+    const { begin: beginHydration, end: endHydration } = talksPathnameHydration;
+    let hydrateCompletesAsync = false;
+    beginHydration();
+    try {
+      const parsed = parseTalksPathname(pathname);
 
-    if (parsed.page === "profile" && parsed.profileHandle) {
-      void fetchAndMergeVisitByHandle(parsed.profileHandle)
-        .then((bundle) => {
-          if (!bundle?.profile?.id) {
+      if (parsed.page === "profile" && parsed.profileHandle) {
+        hydrateCompletesAsync = true;
+        void fetchAndMergeVisitByHandle(parsed.profileHandle)
+          .then((bundle) => {
+            if (!bundle?.profile?.id) {
+              router.replace("/" + searchSuffix, { scroll: false });
+              return;
+            }
+            setProfileVisitUserId(String(bundle.profile.id));
+            setPage("profile");
+          })
+          .catch(() => {
             router.replace("/" + searchSuffix, { scroll: false });
-            return;
-          }
-          setProfileVisitUserId(String(bundle.profile.id));
-          setPage("profile");
-        })
-        .catch(() => {
-          router.replace("/" + searchSuffix, { scroll: false });
-        });
-      return;
-    }
+          })
+          .finally(() => {
+            endHydration();
+          });
+        return;
+      }
 
-    if (parsed.page === "profile" && parsed.selfProfile) {
+      if (parsed.page === "profile" && parsed.selfProfile) {
+        resetProfileVisit();
+        setPage("profile");
+        return;
+      }
+
       resetProfileVisit();
-      setPage("profile");
-      return;
+      setPage(parsed.page);
+    } finally {
+      if (!hydrateCompletesAsync) endHydration();
     }
-
-    resetProfileVisit();
-    setPage(parsed.page);
-  }, [pathname, fetchAndMergeVisitByHandle, resetProfileVisit, router, setPage, setProfileVisitUserId]);
-
-  /** True while pathname → state hydration still needs another render cycle. */
-  const pathAheadOfState = () => {
-    const p = parseTalksPathname(pathname);
-
-    if (p.profileHandle) {
-      if (page !== "profile" || !profileVisitUserId) return true;
-      const u = users[profileVisitUserId];
-      const h = typeof u?.handle === "string" ? u.handle.trim().toLowerCase() : "";
-      return !h || h !== String(p.profileHandle).trim().toLowerCase();
-    }
-
-    return p.page !== page;
-  };
+  }, [pathname, fetchAndMergeVisitByHandle, resetProfileVisit, router, setPage, setProfileVisitUserId, talksPathnameHydration]);
 
   // React state → URL after in-app navigations (`setPage` from sidebar etc.).
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (pathAheadOfState()) return;
+    if (talksPathnameHydration.shouldDeferTalksPush()) return;
 
     const built = buildTalksPathname({ page, profileVisitUserId, profile, users });
     if (built == null) return;
@@ -96,7 +94,7 @@ export function TalksRouterSync() {
 
     lastPushedFullRef.current = nextFull;
     router.replace(nextFull, { scroll: false });
-  }, [pathname, page, profileVisitUserId, profile, users, router]);
+  }, [pathname, page, profileVisitUserId, profile, users, router, talksPathnameHydration]);
 
   // `#profile@x` / `#forum` legacy links → real paths once.
   useEffect(() => {

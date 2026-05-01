@@ -495,11 +495,31 @@ export function AppStateProvider({ children }) {
 
   const tokens = useMemo(() => getThemeTokens(prefs.mode), [prefs.mode]);
 
+  /** See `TalksRouterSync`: block state→URL push while pathname hydration (incl. async profile fetch) is in flight. */
+  const talksUrlPushDeferDepthRef = useRef(0);
+  const talksPathnameHydration = useMemo(
+    () => ({
+      begin: () => {
+        talksUrlPushDeferDepthRef.current += 1;
+      },
+      end: () => {
+        queueMicrotask(() => {
+          talksUrlPushDeferDepthRef.current = Math.max(0, talksUrlPushDeferDepthRef.current - 1);
+        });
+      },
+      shouldDeferTalksPush: () => talksUrlPushDeferDepthRef.current > 0,
+    }),
+    []
+  );
+
   const value = useMemo(
     () => ({
       page,
       setPage,
       profileVisitUserId,
+      fetchAndMergeVisitByHandle,
+      setProfileVisitUserId,
+      talksPathnameHydration,
       visitedProfileFriends,
       visitUserProfile,
       reloadVisitedProfile,
@@ -561,6 +581,8 @@ export function AppStateProvider({ children }) {
     [
       page,
       profileVisitUserId,
+      fetchAndMergeVisitByHandle,
+      talksPathnameHydration,
       visitedProfileFriends,
       visitUserProfile,
       reloadVisitedProfile,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import * as api from "../api/ccsApi";
 import { useAppState } from "../state/AppState";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -22,7 +23,7 @@ function readFileAsDataURL(file) {
 }
 
 export function AccountCenterModal({ open, onCancel }) {
-  const { profile, prefs, updatePrefs, signOut, persistFullProfile } = useAppState();
+  const { profile, prefs, updatePrefs, signOut, persistFullProfile, accountEmail } = useAppState();
   const [section, setSection] = useState("account");
   const [draft, setDraft] = useState(profile);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
@@ -127,7 +128,9 @@ export function AccountCenterModal({ open, onCancel }) {
                       <option>English</option><option>Filipino</option><option>Tagalog</option>
                     </select>
                   </Field>
-                  <Field label="Email (mock)"><input style={inp(280)} placeholder="you@student.fatima.edu.ph" /></Field>
+                  <Field label="School email (verified at sign-up)">
+                    <input style={{ ...inp(280), opacity: 0.85, cursor: "not-allowed" }} readOnly value={accountEmail || "—"} />
+                  </Field>
                 </Group>
               </Stack>
             )}
@@ -210,7 +213,21 @@ export function AccountCenterModal({ open, onCancel }) {
                   <Field label="Clear local cache (posts, comments, friends, subs)">
                     <button onClick={() => { if (typeof window === "undefined") return; ["ccs.posts.v1", "ccs.comments.v1", "ccs.activities.v1", "ccs.friends.v1", "ccs.subs.v1", "ccs.reports.v1"].forEach((k) => window.localStorage.removeItem(k)); window.location.reload(); }} style={btn("ghost")}>Clear & reload</button>
                   </Field>
-                  <Field label="Reset onboarding"><button onClick={() => alert("Onboarding reset (mock)")} style={btn("ghost")}>Reset</button></Field>
+                  <Field label="Run welcome flow again">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await api.patchAccount({ prefs: { ...prefs, onboardingCompleted: false } });
+                          updatePrefs({ onboardingCompleted: false });
+                        } catch {
+                          window.alert("Could not reset onboarding. Check your connection.");
+                        }
+                      }}
+                      style={btn("ghost")}
+                    >
+                      Replay onboarding
+                    </button>
+                  </Field>
                 </Group>
                 <Group title="Danger zone" tone="warn">
                   <Field label="Delete account">

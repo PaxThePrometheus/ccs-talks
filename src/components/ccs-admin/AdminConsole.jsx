@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { AdminLandingPane } from "./AdminLandingPane";
 import { adminTheme as t, btn, panel, panelHeader, row, tag } from "./adminUi";
 
 const SECTIONS = [
   { key: "overview", icon: "📊", label: "Overview" },
+  { key: "landing", icon: "🖼", label: "Landing page" },
   { key: "users", icon: "👥", label: "Users & roles" },
   { key: "posts", icon: "📰", label: "Posts" },
   { key: "audit", icon: "🧾", label: "Audit log" },
@@ -58,6 +60,7 @@ export function AdminConsole({ viewer, inviteRequired }) {
         )}
         <div style={{ padding: "1.25rem 1.75rem 2.5rem", display: "flex", flexDirection: "column", gap: 14 }}>
           {section === "overview" && <OverviewPane onError={handleErr} />}
+          {section === "landing" && <AdminLandingPane onError={handleErr} />}
           {section === "users" && <UsersPane viewer={viewer} onError={handleErr} inviteRequired={inviteRequired} />}
           {section === "posts" && <PostsPane onError={handleErr} />}
           {section === "audit" && <AuditPane onError={handleErr} />}
@@ -521,7 +524,7 @@ function Stat({ k, v, accent, tone }) {
   return (
     <div style={{ borderRadius: 16, border: `1px solid ${t.border}`, background: t.surface, backdropFilter: "blur(12px)", padding: "14px 16px" }}>
       <div style={{ color: t.muted, fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase" }}>{k}</div>
-      <div style={{ color: valueColor, fontSize: 28, fontWeight: 950, marginTop: 4 }}>{useMemo(() => Number(v).toLocaleString(), [v])}</div>
+      <div style={{ color: valueColor, fontSize: 28, fontWeight: 950, marginTop: 4 }}>{Number(v).toLocaleString()}</div>
     </div>
   );
 }

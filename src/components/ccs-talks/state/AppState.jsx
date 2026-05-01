@@ -32,6 +32,7 @@ export function AppStateProvider({ children }) {
   const [bannedUserIds, setBannedUserIds] = useLocalStorageState("ccs.banned.v1", []);
   /** Server-truth role for the current viewer; defaults to "student" until /api/auth/me responds. */
   const [role, setRole] = useState("student");
+  const [accountEmail, setAccountEmail] = useState("");
 
   /** Skip first debounced PATCH after we just applied server snapshot (prevents PATCH loop). */
   const lastSyncedExtrasRef = useRef("");
@@ -46,6 +47,7 @@ export function AppStateProvider({ children }) {
       setSubs(normalizeSubs(me.subs));
       setActivities(normalizeActivities(me.activities));
       setRole(me.role || "student");
+      setAccountEmail(typeof me.email === "string" ? me.email : "");
       lastSyncedExtrasRef.current = JSON.stringify({
         prefs: normalizePrefs(me.prefs),
         friends: normalizeFriends(me.friends),
@@ -53,7 +55,7 @@ export function AppStateProvider({ children }) {
         activities: normalizeActivities(me.activities),
       });
     },
-    [setProfile, setIsAuthed, setPrefs, setFriends, setSubs, setActivities]
+    [setProfile, setIsAuthed, setPrefs, setFriends, setSubs, setActivities, setAccountEmail]
   );
 
   const persistFullProfile = useCallback(
@@ -116,6 +118,7 @@ export function AppStateProvider({ children }) {
     }
     setIsAuthed(false);
     setRole("student");
+    setAccountEmail("");
   };
 
   /** Bootstrap server feed / session cookie when running inside Next.js. */
@@ -425,6 +428,7 @@ export function AppStateProvider({ children }) {
       // auth
       isAuthed,
       role,
+      accountEmail,
       isStaff: role === "admin" || role === "moderator",
       signIn,
       signOut,
@@ -452,6 +456,7 @@ export function AppStateProvider({ children }) {
       tokens,
       isAuthed,
       role,
+      accountEmail,
       reports,
       bannedUserIds,
       refreshFeed,

@@ -180,7 +180,7 @@ export async function registerAccountRow(email, password, name, suggestedHandle)
       passwordHash: hash,
       profile,
       bookmarkedPostIds: [],
-      prefs: CCS_DEFAULT_PREFS,
+      prefs: { ...CCS_DEFAULT_PREFS, onboardingCompleted: false },
       friendsState: CCS_DEFAULT_FRIENDS,
       subsState: CCS_DEFAULT_SUBS,
       activities: [],
@@ -394,6 +394,7 @@ export function accountWireFromRow(row) {
   const base = typeof row.profile === "object" && row.profile ? row.profile : {};
   const merged = { ...DEFAULT_PROFILE, ...base, id: row.id };
   return {
+    email: row.email || "",
     profile: toPublicProfile(merged),
     prefs: normalizePrefs(row.prefs),
     friends: normalizeFriends(row.friendsState),

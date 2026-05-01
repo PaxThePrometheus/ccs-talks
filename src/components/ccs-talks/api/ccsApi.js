@@ -32,6 +32,25 @@ export function getMe() {
   return jsonFetch("/api/auth/me", { method: "GET" });
 }
 
+/** Public landing CMS + live stats (guests OK). */
+export function getLanding() {
+  return fetch("/api/landing", { cache: "no-store" }).then(async (res) => {
+    const text = await res.text();
+    let data = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = {};
+    }
+    if (!res.ok) {
+      const err = new Error(data?.error || `Request failed (${res.status})`);
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  });
+}
+
 export function registerAccount({ email, password, name }) {
   return jsonFetch("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, name }) });
 }

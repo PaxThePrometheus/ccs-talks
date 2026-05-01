@@ -1,8 +1,10 @@
 "use client";
 
+import { defaultLandingCms } from "@/lib/ccs/landingDefaults";
 import { useEffect, useRef, useState } from "react";
+import * as api from "../api/ccsApi";
 import { GSAP_CDN } from "../cdn";
-import { APP_CONFIG, FORUM_RAIL } from "../config/appConfig";
+import { APP_CONFIG } from "../config/appConfig";
 import { useScript } from "../useScript";
 import { PostCard } from "../components/PostCard";
 import { MiniProfilePreview } from "../ui/MiniProfilePreview";
@@ -12,6 +14,7 @@ import { PostDetailModal } from "../ui/PostDetailModal";
 export function ForumScreen({ readOnly = false, onSignInPrompt }) {
   const { users, posts, likePost, toggleBookmark, sharePost, reportPost, tokens, prefs, setPage, publishPost } = useAppState();
   const isLight = prefs.mode === "light";
+  const [forumRail, setForumRail] = useState(() => defaultLandingCms().forumRail);
   const [draft, setDraft] = useState("");
   const composeRef = useRef(null);
   const feedScrollRef = useRef(null);
@@ -22,6 +25,30 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
   const closeTimerRef = useRef(null);
   const [activePostId, setActivePostId] = useState(null);
   const [activeTag, setActiveTag] = useState("All");
+
+  /** Forum rail copy is CMS-driven; poll so admin edits converge without redeploying. */
+  useEffect(() => {
+    let alive = true;
+    const poll = async () => {
+      try {
+        const d = await api.getLanding();
+        if (!alive || !d?.cms?.forumRail) return;
+        setForumRail((prev) => ({
+          rising: Array.isArray(d.cms.forumRail.rising) ? d.cms.forumRail.rising : prev.rising,
+          interests: Array.isArray(d.cms.forumRail.interests) ? d.cms.forumRail.interests : prev.interests,
+          trending: Array.isArray(d.cms.forumRail.trending) ? d.cms.forumRail.trending : prev.trending,
+        }));
+      } catch {
+        /* keep last good rail */
+      }
+    };
+    void poll();
+    const id = window.setInterval(() => void poll(), 15_000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !composeRef.current) return undefined;
@@ -286,12 +313,12 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
           <div style={{ marginTop: "1.5rem" }} className="ccs-rail-inline">
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <Panel title="Rising Threads">
-                {FORUM_RAIL.rising.map((t, i) => (
+                {forumRail.rising.map((t, i) => (
                   <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
                 ))}
               </Panel>
               <Panel title="Trending">
-                {FORUM_RAIL.trending.map((t, i) => (
+                {forumRail.trending.map((t, i) => (
                   <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
                 ))}
               </Panel>
@@ -361,17 +388,17 @@ export function ForumScreen({ readOnly = false, onSignInPrompt }) {
         <div style={{ height: "100%", overflow: "hidden" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
             <Panel title="Rising Threads">
-              {FORUM_RAIL.rising.map((t, i) => (
+              {forumRail.rising.map((t, i) => (
                 <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
               ))}
             </Panel>
             <Panel title="From your interests">
-              {FORUM_RAIL.interests.map((t, i) => (
+              {forumRail.interests.map((t, i) => (
                 <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
               ))}
             </Panel>
             <Panel title="Trending">
-              {FORUM_RAIL.trending.map((t, i) => (
+              {forumRail.trending.map((t, i) => (
                 <PanelRow key={i} onClick={() => setPage("search")}>{t}</PanelRow>
               ))}
             </Panel>

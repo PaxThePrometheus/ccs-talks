@@ -18,6 +18,7 @@ import { BookmarksScreen } from "./screens/BookmarksScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { FriendsScreen } from "./screens/FriendsScreen";
 import { SubscriptionsScreen } from "./screens/SubscriptionsScreen";
+import { OnboardingModal } from "./ui/OnboardingModal";
 import { AppStateProvider, useAppState } from "./state/AppState";
 
 function CCSTalksAppInner() {
@@ -128,6 +129,7 @@ function CCSTalksAppInner() {
           <span style={{ fontStyle: "italic", fontWeight: 800, fontSize: 11, color: "rgba(255,255,255,0.25)", letterSpacing: "1px" }} />
         </div>
       )}
+      <OnboardingModal open={isAuthed && prefs?.onboardingCompleted === false} />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, or } from "drizzle-orm";
 import { DEFAULT_PROFILE } from "@/components/ccs-talks/config/appConfig";
 import {
   CCS_DEFAULT_FRIENDS,
@@ -9,6 +9,7 @@ import {
 import { newPasswordRecord, sanitizeEmail } from "./auth";
 import { getDb } from "./drizzle-client";
 import { toPublicProfile } from "./publicUser";
+import { formatStatNumber, mergeLandingCms } from "./landingDefaults";
 import {
   insertSession,
   makeUserId,
@@ -137,7 +138,7 @@ export async function registerAdminAccount({ email, password, name, inviteCode }
     passwordHash: hash,
     profile,
     bookmarkedPostIds: [],
-    prefs: CCS_DEFAULT_PREFS,
+    prefs: { ...CCS_DEFAULT_PREFS, onboardingCompleted: true },
     friendsState: CCS_DEFAULT_FRIENDS,
     subsState: CCS_DEFAULT_SUBS,
     activities: [],
@@ -428,4 +429,69 @@ export async function getOverview() {
       createdAt: Number(r.createdAt) || 0,
     })),
   };
+}
+
+/** ---------- landing CMS & public hero stats ---------- */
+const LANDING_SETTINGS_KEY = "landing";
+
+async function landingStats(db) {
+  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  const [[{ n: nu }], [{ n: np }], [{ n: na }]] = await Promise.all([
+    db.select({ n: count() }).from(schema.ccsUsers),
+    db.select({ n: count() }).from(schema.ccsPosts),
+    db.select({ n: count() }).from(schema.ccsPresence).where(gte(schema.ccsPresence.lastSeen, dayAgo)),
+  ]);
+  return {
+    members: Number(nu ?? 0),
+    threads: Number(np ?? 0),
+    activeToday: Number(na ?? 0),
+  };
+}
+
+export async function getLandingCmsMerged() {
+  const db = await getDb();
+  const [row] = await db.select().from(schema.ccsSiteSettings).where(eq(schema.ccsSiteSettings.key, LANDING_SETTINGS_KEY)).limit(1);
+  const stored = row?.value && typeof row.value === "object" ? row.value : {};
+  return mergeLandingCms(stored);
+}
+
+export async function getPublicLandingBundle() {
+  const db = await getDb();
+  const [meta] = await db.select().from(schema.ccsSiteSettings).where(eq(schema.ccsSiteSettings.key, LANDING_SETTINGS_KEY)).limit(1);
+
+  const cms = await getLandingCmsMerged();
+  const raw = await landingStats(db);
+
+  const stats = [
+    { k: cms.statLabels.members, v: formatStatNumber(raw.members), raw: raw.members },
+    { k: cms.statLabels.threads, v: formatStatNumber(raw.threads), raw: raw.threads },
+    { k: cms.statLabels.activeToday, v: formatStatNumber(raw.activeToday), raw: raw.activeToday },
+  ];
+
+  return {
+    cms,
+    stats,
+    updatedAt: meta ? Number(meta.updatedAt) || null : null,
+    counts: raw,
+  };
+}
+
+export async function saveLandingCms(actorId, body) {
+  if (!body || typeof body !== "object") return { error: "invalid_body", status: 400 };
+  /** Accept either `{ cms: {...} }` or a raw CMS root object. */
+  const candidate = body.cms !== undefined ? body.cms : body;
+  const normalized = mergeLandingCms(candidate && typeof candidate === "object" ? candidate : {});
+  const db = await getDb();
+  const now = Date.now();
+  await db
+    .insert(schema.ccsSiteSettings)
+    .values({ key: LANDING_SETTINGS_KEY, value: normalized, updatedAt: now, updatedBy: actorId })
+    .onConflictDoUpdate({
+      target: schema.ccsSiteSettings.key,
+      set: { value: normalized, updatedAt: now, updatedBy: actorId },
+    });
+
+  await appendAudit(actorId, "landing_cms_update", LANDING_SETTINGS_KEY, {});
+
+  return { cms: normalized };
 }

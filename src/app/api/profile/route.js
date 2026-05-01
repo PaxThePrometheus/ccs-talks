@@ -1,9 +1,27 @@
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
-import { patchUserProfile, resolveViewerFromSession } from "@/lib/ccs/store";
+import { fetchVisitProfileBundle, patchUserProfile, resolveViewerFromSession } from "@/lib/ccs/store";
 
 export const dynamic = "force-dynamic";
+
+export async function GET(request) {
+  await ensureReady();
+  const url = new URL(request.url);
+  const visitUserId = url.searchParams.get("visitUserId");
+
+  if (!visitUserId || typeof visitUserId !== "string" || !visitUserId.trim()) {
+    return NextResponse.json({ error: "visitUserId is required." }, { status: 400 });
+  }
+
+  try {
+    const bundle = await fetchVisitProfileBundle(visitUserId.trim());
+    if (!bundle) return NextResponse.json({ error: "Not found." }, { status: 404 });
+    return NextResponse.json(bundle);
+  } catch {
+    return NextResponse.json({ error: "Database unavailable." }, { status: 503 });
+  }
+}
 
 export async function PATCH(request) {
   await ensureReady();

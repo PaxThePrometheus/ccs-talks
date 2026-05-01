@@ -93,6 +93,8 @@ export const DEFAULT_PROFILE = {
   org: "CCS Dev Guild",
   bio: "Computer science student building expressive UI systems. Interests: UX engineering, realtime graphics, and app polish.",
   badges: ["Dean’s Lister", "Hackathon ’25", "Org Member"],
+  /** Faculty badge for students only; admins/mods use account role — set in admin console. */
+  publicRoleBadge: null,
   /** Forum-style footer shown under posts/comments (plain text + optional image/link). */
   signature: "",
   signatureImage: "",

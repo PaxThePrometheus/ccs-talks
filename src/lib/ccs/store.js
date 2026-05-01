@@ -42,6 +42,7 @@ function userRowToShim(row) {
   return {
     id: row.id,
     profile: row.profile,
+    role: row.role || "student",
     bookmarkedPostIds: coerceArr(row.bookmarkedPostIds),
   };
 }
@@ -531,6 +532,37 @@ export async function getAccountWire(token) {
   const [row] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, viewer.id)).limit(1);
   if (!row) return null;
   return accountWireFromRow(row);
+}
+
+/** Public card + friend's public profiles for Profile visit view (friends tab). */
+export async function fetchVisitProfileBundle(visitUserId) {
+  const uid = String(visitUserId || "").trim();
+  if (!uid) return null;
+
+  const db = await getDb();
+  const [row] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, uid)).limit(1);
+  if (!row) return null;
+
+  const prev = typeof row.profile === "object" && row.profile ? row.profile : {};
+  const merged = { ...DEFAULT_PROFILE, ...prev, id: row.id };
+  merged.university = CCS_OLFU_UNIVERSITY;
+  const profile = { ...toPublicProfile(merged), forumRole: row.role || "student" };
+
+  const fs = normalizeFriends(row.friendsState);
+  const friendIds = [...new Set((fs.friends || []).filter(Boolean))].slice(0, 72);
+
+  let friendMiniUsers = {};
+  if (friendIds.length > 0) {
+    const fRows = await db.select().from(schema.ccsUsers).where(inArray(schema.ccsUsers.id, friendIds));
+    for (const fr of fRows) {
+      const mp = typeof fr.profile === "object" && fr.profile ? fr.profile : {};
+      const m = { ...DEFAULT_PROFILE, ...mp, id: fr.id };
+      m.university = CCS_OLFU_UNIVERSITY;
+      friendMiniUsers[fr.id] = { ...toPublicProfile(m), forumRole: fr.role || "student" };
+    }
+  }
+
+  return { profile, friendIds, friendMiniUsers };
 }
 
 export async function isHandleTakenElsewhere(db, handle, excludeUserId) {

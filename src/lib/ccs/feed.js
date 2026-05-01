@@ -3,13 +3,22 @@ import { toPublicProfile } from "./publicUser";
 
 export function authorProfilesByIds(db, userIds) {
   const map = {};
-  const byId = {};
+  const byProfile = {};
+  const byRole = {};
   for (const u of db.users) {
-    if (u?.id && u.profile) byId[u.id] = u.profile;
+    if (!u?.id) continue;
+    if (u.profile != null) byProfile[u.id] = u.profile;
+    byRole[u.id] = typeof u.role === "string" && u.role.trim() ? u.role.trim() : "student";
   }
   for (const id of userIds) {
     if (!id) continue;
-    if (byId[id]) map[id] = toPublicProfile(byId[id]);
+    if (!byProfile[id]) continue;
+    const base = toPublicProfile(byProfile[id]);
+    if (!base) continue;
+    map[id] = {
+      ...base,
+      forumRole: byRole[id] || "student",
+    };
   }
   return map;
 }

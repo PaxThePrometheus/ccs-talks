@@ -8,6 +8,8 @@ import { CcsMarkdown } from "../components/CcsMarkdown";
 import { buildHandleDirectory } from "../components/MentionBody";
 import { SignatureFooter } from "../components/SignatureFooter";
 import { FeedComposer } from "./FeedComposer";
+import { ForumImageLightbox } from "./ForumImageLightbox";
+import { UserStatusBadgeRow } from "./UserStatusBadgeRow";
 
 export function PostDetailModal({ open, postId, onClose }) {
   const {
@@ -29,6 +31,7 @@ export function PostDetailModal({ open, postId, onClose }) {
   const [commentImage, setCommentImage] = useState("");
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
+  const [imageViewer, setImageViewer] = useState(null);
 
   const post = useMemo(() => posts.find((p) => String(p.id) === String(postId)), [posts, postId]);
   const user = post ? users[post.userId] : null;
@@ -41,6 +44,10 @@ export function PostDetailModal({ open, postId, onClose }) {
     void loadCommentsFromServer(postId);
     return undefined;
   }, [open, postId, loadCommentsFromServer]);
+
+  useEffect(() => {
+    if (!open) setImageViewer(null);
+  }, [open]);
 
   if (!open || !post) return null;
 
@@ -62,17 +69,21 @@ export function PostDetailModal({ open, postId, onClose }) {
     setCommentImage("");
   };
 
+  const viewerTitleBase = post.content?.trim().slice(0, 48) || "Post";
+
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 650, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.60)", backdropFilter: "blur(8px)" }} />
 
       <div
-        className="ccs-scroll"
         style={{
           position: "relative",
           width: "min(980px, 96vw)",
-          maxHeight: "min(88vh, 920px)",
-          overflow: "auto",
+          maxHeight: "min(82vh, 860px)",
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
           borderRadius: 18,
           border: "1px solid rgba(255,255,255,0.12)",
           background: "rgba(20,0,8,0.76)",
@@ -80,13 +91,27 @@ export function PostDetailModal({ open, postId, onClose }) {
           boxShadow: "0 34px 120px rgba(0,0,0,0.60)",
         }}
       >
-        <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid rgba(255,255,255,0.10)" }}>
+        <div
+          style={{
+            padding: "14px 16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            borderBottom: "1px solid rgba(255,255,255,0.10)",
+            flexShrink: 0,
+          }}
+        >
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <div style={{ width: 36, height: 36, borderRadius: 12, border: "1px solid rgba(255,255,255,0.14)", background: "linear-gradient(135deg, rgba(255,96,128,0.30), rgba(155,0,40,0.60))" }} />
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 900, color: "#fff", letterSpacing: "-0.2px", lineHeight: 1.1 }}>{user?.name ?? "Unknown"}</div>
-              <div style={{ marginTop: 2, color: "rgba(240,220,220,0.62)", fontSize: 12 }}>
-                @{user?.handle ?? "unknown"} · {post.time}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ fontWeight: 900, color: "#fff", letterSpacing: "-0.2px", lineHeight: 1.1 }}>{user?.name ?? "Unknown"}</div>
+                <UserStatusBadgeRow user={user} chromed="modalDark" dense gap={6} />
+              </div>
+              <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, color: "rgba(240,220,220,0.62)", fontSize: 12 }}>
+                <span>
+                  @{user?.handle ?? "unknown"} · {post.time}
+                </span>
               </div>
             </div>
           </div>
@@ -117,7 +142,7 @@ export function PostDetailModal({ open, postId, onClose }) {
           </div>
         </div>
 
-        <div style={{ padding: 16 }}>
+        <div className="ccs-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16 }}>
           <div style={{ borderRadius: 16, border: "1px solid rgba(255,255,255,0.10)", background: THEME.colors.cardBg, backdropFilter: "blur(12px)", overflow: "hidden" }}>
             <div style={{ padding: "12px 14px" }}>
               {editing ? (
@@ -140,11 +165,28 @@ export function PostDetailModal({ open, postId, onClose }) {
               )}
               {post.imageUrl ? (
                 <div style={{ marginTop: 10 }}>
-                  <img
-                    src={post.imageUrl}
-                    alt=""
-                    style={{ maxHeight: 360, maxWidth: "100%", borderRadius: 12, objectFit: "contain", border: "1px solid rgba(255,255,255,0.12)" }}
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setImageViewer({ src: post.imageUrl, title: viewerTitleBase })}
+                    title="View image"
+                    style={{
+                      padding: 0,
+                      margin: 0,
+                      border: "none",
+                      background: "transparent",
+                      cursor: "zoom-in",
+                      display: "block",
+                      maxWidth: "100%",
+                      borderRadius: 12,
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- user content */}
+                    <img
+                      src={post.imageUrl}
+                      alt=""
+                      style={{ maxHeight: 360, maxWidth: "100%", borderRadius: 12, objectFit: "contain", border: "1px solid rgba(255,255,255,0.12)", display: "block" }}
+                    />
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -199,10 +241,13 @@ export function PostDetailModal({ open, postId, onClose }) {
               const u = users[c.userId];
               return (
                 <div key={c.id} style={{ borderRadius: 14, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(30,0,12,0.52)", backdropFilter: "blur(12px)", padding: "10px 12px" }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <div style={{ fontWeight: 850, color: "#fff" }}>{u?.name ?? "Unknown"}</div>
-                    <div style={{ color: "rgba(240,220,220,0.6)", fontSize: 12 }}>@{u?.handle ?? "unknown"}</div>
-                    <div style={{ marginLeft: "auto", color: "rgba(240,220,220,0.45)", fontSize: 11 }}>{new Date(c.ts).toLocaleString()}</div>
+                    <UserStatusBadgeRow user={u} chromed="modalDark" dense gap={4} />
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+                    <span style={{ color: "rgba(240,220,220,0.6)", fontSize: 12 }}>@{u?.handle ?? "unknown"}</span>
+                    <span style={{ marginLeft: "auto", color: "rgba(240,220,220,0.45)", fontSize: 11 }}>{new Date(c.ts).toLocaleString()}</span>
                   </div>
                   <div style={{ marginTop: 6, fontSize: 13, lineHeight: 1.55 }}>
                     <CcsMarkdown
@@ -220,11 +265,40 @@ export function PostDetailModal({ open, postId, onClose }) {
                   </div>
                   {c.imageUrl ? (
                     <div style={{ marginTop: 8 }}>
-                      <img
-                        src={c.imageUrl}
-                        alt=""
-                        style={{ maxHeight: 220, maxWidth: "100%", borderRadius: 10, objectFit: "contain", border: "1px solid rgba(255,255,255,0.10)" }}
-                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setImageViewer({
+                            src: c.imageUrl,
+                            title: c.text?.trim().slice(0, 48) || "Comment",
+                          })
+                        }
+                        title="View image"
+                        style={{
+                          padding: 0,
+                          margin: 0,
+                          border: "none",
+                          background: "transparent",
+                          cursor: "zoom-in",
+                          display: "block",
+                          maxWidth: "100%",
+                          borderRadius: 10,
+                        }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={c.imageUrl}
+                          alt=""
+                          style={{
+                            maxHeight: 220,
+                            maxWidth: "100%",
+                            borderRadius: 10,
+                            objectFit: "contain",
+                            border: "1px solid rgba(255,255,255,0.10)",
+                            display: "block",
+                          }}
+                        />
+                      </button>
                     </div>
                   ) : null}
                   <SignatureFooter user={u} tokens={tokens} isLight={isLight} compact />
@@ -234,6 +308,13 @@ export function PostDetailModal({ open, postId, onClose }) {
           </div>
         </div>
       </div>
+
+      <ForumImageLightbox
+        open={!!imageViewer?.src}
+        src={imageViewer?.src ?? ""}
+        title={imageViewer?.title ?? "Image"}
+        onClose={() => setImageViewer(null)}
+      />
     </div>
   );
 }

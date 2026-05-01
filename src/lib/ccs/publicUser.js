@@ -1,5 +1,7 @@
 /** Fields safe to expose in API responses after auth / for author cards. */
 
+import { sanitizePublicRoleBadge } from "./statusBadges";
+
 export function toPublicProfile(p) {
   if (!p || typeof p !== "object") return null;
   return {
@@ -16,6 +18,8 @@ export function toPublicProfile(p) {
     org: p.org,
     bio: p.bio,
     badges: Array.isArray(p.badges) ? p.badges : [],
+    /** Faculty / instructor title only; admins set via admin console. */
+    publicRoleBadge: sanitizePublicRoleBadge(p.publicRoleBadge),
     signature: typeof p.signature === "string" ? p.signature : "",
     signatureImage: typeof p.signatureImage === "string" ? p.signatureImage : "",
     signatureLink: typeof p.signatureLink === "string" ? p.signatureLink : "",

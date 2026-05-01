@@ -9,6 +9,7 @@ import {
 import { newPasswordRecord, sanitizeEmail } from "./auth";
 import { getDb } from "./drizzle-client";
 import { toPublicProfile } from "./publicUser";
+import { sanitizePublicRoleBadge } from "./statusBadges";
 import { formatStatNumber, mergeLandingCms } from "./landingDefaults";
 import { badgeColorsMapFromRegistry, ensureBadgeRegistryAndColors, sanitizeBadgeRegistryInput } from "./badgeColors";
 import { publicAppBaseUrl } from "./mailer";
@@ -36,7 +37,7 @@ export const ROLE_ADMIN = "admin";
 const STAFF_ROLES = new Set([ROLE_MODERATOR, ROLE_ADMIN]);
 
 /** Profile fields moderators/admins may set via PATCH (plus status & badges below). */
-const STAFF_PROFILE_PATCH_KEYS = new Set([...PROFILE_PATCH_FIELD_KEYS, "status", "badges"]);
+const STAFF_PROFILE_PATCH_KEYS = new Set([...PROFILE_PATCH_FIELD_KEYS, "status", "badges", "publicRoleBadge"]);
 
 export const DEFAULT_SITE_SETTINGS = {
   registrationOpen: true,
@@ -414,6 +415,8 @@ export async function patchUserProfileAsStaff(actor, targetUserId, incoming) {
       else if (k === "badges") {
         const arr = Array.isArray(v) ? v : [];
         next.badges = arr.map((x) => String(x || "").trim().slice(0, 40)).filter(Boolean).slice(0, 8);
+      } else if (k === "publicRoleBadge") {
+        next.publicRoleBadge = sanitizePublicRoleBadge(v);
       } else if (k === "signature") next.signature = String(v ?? "").slice(0, 280);
       else if (k === "signatureLink") {
         const s = String(v ?? "").trim().slice(0, 4096);
@@ -437,6 +440,7 @@ export async function patchUserProfileAsStaff(actor, targetUserId, incoming) {
   next.university = CCS_OLFU_UNIVERSITY;
   /** Admin username changes don't reset student cooldown bookkeeping. */
   next.handleChangedAt = baseline.handleChangedAt;
+  delete next.statusBadges;
 
   await db.update(schema.ccsUsers).set({ profile: next }).where(eq(schema.ccsUsers.id, targetUserId));
   await appendAudit(actor.id, "user_profile_staff_patch", targetUserId, { keys: Object.keys(incoming) });

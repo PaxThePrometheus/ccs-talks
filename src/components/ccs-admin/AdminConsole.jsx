@@ -1032,6 +1032,42 @@ function BadgesEditor({ userId, badges, badgeRegistry, badgeColors, onSave }) {
   );
 }
 
+/** Faculty / leadership title for student accounts; admin & moderator chips come from account role. */
+function PublicRoleBadgeControl({ profile, role, userId, patchUser }) {
+  const pr = profile?.publicRoleBadge;
+  const v = pr && ["teacher", "instructor", "dean", "professor"].includes(pr) ? pr : "";
+  const isElevated = role === "admin" || role === "moderator";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0, maxWidth: 420 }}>
+      <span style={{ fontSize: 11, color: t.muted, lineHeight: 1.45 }}>
+        {isElevated ? (
+          <>
+            Account role <strong>{role}</strong> — their status chip shows <strong>{role === "admin" ? "Administrator" : "Moderator"}</strong>. You can still clear a stored faculty value below; it does not change the role chip.
+          </>
+        ) : (
+          <>Optional title next to their name. Leave <strong>None</strong> for regular students (no status chip).</>
+        )}
+      </span>
+      <select
+        value={v}
+        onChange={(e) => {
+          const raw = e.target.value;
+          const next = raw ? raw : null;
+          void patchUser(userId, { profile: { publicRoleBadge: next } });
+        }}
+        style={{ ...inp(280), fontSize: 12 }}
+      >
+        <option value="">None</option>
+        <option value="teacher">Teacher</option>
+        <option value="instructor">Instructor</option>
+        <option value="dean">Dean</option>
+        <option value="professor">Professor</option>
+      </select>
+    </div>
+  );
+}
+
 function StaffForumProfileFold({ user, patchUser }) {
   const [form, setForm] = useState(() => staffProfileSnapshot(user.profile));
 
@@ -1243,6 +1279,13 @@ function UsersPane({ viewer, onError, inviteRequired }) {
                       placeholder="e.g. Student · Dean’s Lister"
                       style={{ ...inp(260), fontSize: 12 }}
                     />
+                  </div>
+                ) : null}
+
+                {(viewer.role === "admin" || viewer.role === "moderator") ? (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>STATUS BADGE (FORUM)</div>
+                    <PublicRoleBadgeControl profile={u.profile} role={u.role} userId={u.id} patchUser={patchUser} />
                   </div>
                 ) : null}
 

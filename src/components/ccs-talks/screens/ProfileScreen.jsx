@@ -2,6 +2,7 @@
 
 import { defaultLandingCms } from "@/lib/ccs/landingDefaults";
 import { badgeAccentForLabel, badgePillColors } from "@/lib/ccs/badgeColors";
+import { statusBadgeDisplayLabels } from "@/lib/ccs/statusBadges";
 import { useMemo, useState } from "react";
 import { useAppState } from "../state/AppState";
 import { ProfileEditModal } from "../ui/ProfileEditModal";
@@ -22,7 +23,9 @@ export function ProfileScreen() {
   const {
     profile,
     profileVisitUserId,
+    visitedProfileFriends,
     resetProfileVisit,
+    reloadVisitedProfile,
     posts,
     users,
     likePost,
@@ -30,6 +33,11 @@ export function ProfileScreen() {
     sharePost,
     reportPost,
     friends,
+    subs,
+    toggleFollow,
+    sendFriendRequest,
+    removeFriend,
+    visitUserProfile,
     tokens,
     prefs,
     publishPost,
@@ -49,26 +57,72 @@ export function ProfileScreen() {
   const [postTagOptions] = useState(() => defaultLandingCms().postTagOptions);
 
   const displayUser = useMemo(() => {
-    if (profileVisitUserId && users[profileVisitUserId]) return users[profileVisitUserId];
-    return profile;
+    if (!profileVisitUserId) return profile;
+    return users[profileVisitUserId] ?? null;
   }, [profileVisitUserId, users, profile]);
 
-  const isSelf = !profileVisitUserId || profileVisitUserId === profile.id;
+  const isSelf = !profileVisitUserId || String(profileVisitUserId) === String(profile.id);
+
+  const theirFriendIds =
+    profileVisitUserId &&
+    visitedProfileFriends &&
+    String(visitedProfileFriends.userId) === String(profileVisitUserId)
+      ? visitedProfileFriends.friendIds || []
+      : [];
+
+  const visitInFlight = !!(profileVisitUserId && !displayUser);
+
   const user = displayUser;
+  const profileStatusLabels = statusBadgeDisplayLabels(user);
+
+  const myPosts = useMemo(
+    () =>
+      !displayUser
+        ? []
+        : posts
+            .filter((p) => p.userId === displayUser.id)
+            .slice()
+            .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)),
+    [posts, displayUser]
+  );
+
+  if (visitInFlight) {
+    const shell = {
+      position: "fixed",
+      top: 0,
+      left: "var(--ccs-shell-left)",
+      right: 0,
+      bottom: 0,
+      overflowY: "auto",
+      overflowX: "hidden",
+      padding: "1.75rem var(--ccs-shell-pad-x) 2.5rem",
+      borderLeft: `1px solid ${tokens.divider}`,
+      color: tokens.text,
+    };
+    return (
+      <div className="ccs-scroll" style={shell}>
+        <div style={{ maxWidth: 480, margin: "10vh auto", textAlign: "center" }}>
+          <div style={{ fontWeight: 950, color: tokens.textStrong }}>Loading profile…</div>
+          <div style={{ marginTop: 10, color: tokens.textMuted, fontSize: 14, lineHeight: 1.55 }}>
+            Syncing public details for this member. If this takes too long, try again.
+          </div>
+          <div style={{ marginTop: 18, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+            <button type="button" onClick={() => reloadVisitedProfile()} style={headerBtn(undefined, tokens)}>
+              Retry
+            </button>
+            <button type="button" onClick={() => resetProfileVisit()} style={headerBtn(undefined, tokens)}>
+              Back to my profile
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const avatarColor = displayUser.avatarColor || "#9b0028";
   const avatarAccent = displayUser.avatarAccent || "#ff6080";
   const bannerColor = displayUser.bannerColor || "#3a0014";
   const bannerAccent = displayUser.bannerAccent || "#ff3a6e";
-
-  const myPosts = useMemo(
-    () =>
-      posts
-        .filter((p) => p.userId === displayUser.id)
-        .slice()
-        .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)),
-    [posts, displayUser.id]
-  );
 
   const bannerStyle = displayUser.bannerImage
     ? { backgroundImage: `url(${displayUser.bannerImage})`, backgroundSize: "cover", backgroundPosition: "center" }
@@ -239,8 +293,12 @@ export function ProfileScreen() {
             <div style={{ marginTop: 4, color: tokens.textMuted, fontSize: 13, lineHeight: 1.5 }}>
               {user.university} · {user.college} · {user.program}
             </div>
-            <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <ChipT tone="good" tokens={tokens}>{user.status}</ChipT>
+            <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              {profileStatusLabels.map((lbl) => (
+                <ChipT key={`st-${lbl}`} tone="statusBadge" tokens={tokens} isLight={isLight}>
+                  {lbl}
+                </ChipT>
+              ))}
               <ChipT tokens={tokens}>{user.year}</ChipT>
               {(user.badges || []).slice(0, 3).map((b) => (
                 <ChipT key={b} tokens={tokens} tone="badge" accentHex={badgeAccentForLabel(badgeColors || {}, b)} isLight={isLight}>
@@ -259,7 +317,18 @@ export function ProfileScreen() {
                 🖌 Cover
               </button>
             </div>
-          ) : null}
+          ) : (
+            <OtherProfileActions
+              target={user}
+              viewerId={profile.id}
+              tokens={tokens}
+              subs={subs}
+              friends={friends}
+              toggleFollow={toggleFollow}
+              sendFriendRequest={sendFriendRequest}
+              removeFriend={removeFriend}
+            />
+          )}
         </div>
 
         {/* Account Center plate (entry into the paginated modal) */}
@@ -296,18 +365,12 @@ export function ProfileScreen() {
 
         {/* Tabs */}
         <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {(isSelf
-            ? [
-                ["posts", "Posts"],
-                ["about", "About"],
-                ["friends", "Friends"],
-                ["photos", "Photos"],
-              ]
-            : [
-                ["posts", "Posts"],
-                ["about", "About"],
-              ]
-          ).map(([k, label]) => (
+          {[
+            ["posts", "Posts"],
+            ["about", "About"],
+            ["friends", "Friends"],
+            ["photos", "Photos"],
+          ].map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)} style={tabPill(tab === k, tokens, isLight)}>
               {label}
             </button>
@@ -334,14 +397,40 @@ export function ProfileScreen() {
             </div>
 
             <div style={{ marginTop: 12, ...panelStyle(tokens, isLight) }}>
-              <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.2px" }}>Badges</div>
-              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {(user.badges || []).map((b) => (
-                  <ChipT key={b} tokens={tokens} tone="badge" accentHex={badgeAccentForLabel(badgeColors || {}, b)} isLight={isLight}>
-                    {b}
-                  </ChipT>
-                ))}
-              </div>
+              <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.2px" }}>Forum status & badges</div>
+              {profileStatusLabels.length ? (
+                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  {profileStatusLabels.map((lbl) => (
+                    <ChipT key={`aside-st-${lbl}`} tone="statusBadge" tokens={tokens} isLight={isLight}>
+                      {lbl}
+                    </ChipT>
+                  ))}
+                </div>
+              ) : null}
+              {(user.badges || []).length ? (
+                <>
+                  <div
+                    style={{
+                      marginTop: profileStatusLabels.length ? 12 : 8,
+                      fontSize: 11,
+                      fontWeight: 900,
+                      letterSpacing: "0.1em",
+                      color: tokens.textMuted,
+                    }}
+                  >
+                    COMMUNITY BADGES
+                  </div>
+                  <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {(user.badges || []).map((b) => (
+                      <ChipT key={b} tokens={tokens} tone="badge" accentHex={badgeAccentForLabel(badgeColors || {}, b)} isLight={isLight}>
+                        {b}
+                      </ChipT>
+                    ))}
+                  </div>
+                </>
+              ) : profileStatusLabels.length ? null : (
+                <div style={{ marginTop: 8, fontSize: 13, color: tokens.textMuted }}>No badges yet.</div>
+              )}
             </div>
           </div>
 
@@ -416,33 +505,103 @@ export function ProfileScreen() {
 
             {tab === "friends" && (
               <div style={panelStyle(tokens, isLight)}>
-                <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.2px" }}>Friends · {friends.friends.length}</div>
-                <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
-                  {friends.friends.map((id) => {
-                    const u = users[id];
-                    if (!u) return null;
-                    const av = u.avatarColor || "#9b0028";
-                    const avA = u.avatarAccent || "#ff6080";
-                    return (
-                      <div key={id} style={{ borderRadius: 14, border: `1px solid ${tokens.cardBorder}`, background: tokens.surfaceAlt, padding: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                        <div style={{ width: 44, height: 44, borderRadius: 999, background: u.avatarImage ? `url(${u.avatarImage}) center/cover no-repeat` : `linear-gradient(135deg, ${avA}, ${av})` }} />
-                        <div style={{ fontWeight: 900, color: tokens.textStrong, fontSize: 13, textAlign: "center" }}>{u.name}</div>
-                        <div style={{ color: tokens.textSubtle, fontSize: 11 }}>@{u.handle}</div>
-                      </div>
-                    );
-                  })}
-                </div>
+                {isSelf ? (
+                  <>
+                    <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.2px" }}>Friends · {friends.friends.length}</div>
+                    <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
+                      {friends.friends.map((id) => {
+                        const u = users[id];
+                        if (!u) return null;
+                        const av = u.avatarColor || "#9b0028";
+                        const avA = u.avatarAccent || "#ff6080";
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => visitUserProfile(id)}
+                            style={{
+                              borderRadius: 14,
+                              border: `1px solid ${tokens.cardBorder}`,
+                              background: tokens.surfaceAlt,
+                              padding: 10,
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              gap: 6,
+                              cursor: "pointer",
+                              color: tokens.text,
+                            }}
+                          >
+                            <div style={{ width: 44, height: 44, borderRadius: 999, background: u.avatarImage ? `url(${u.avatarImage}) center/cover no-repeat` : `linear-gradient(135deg, ${avA}, ${av})` }} />
+                            <div style={{ fontWeight: 900, color: tokens.textStrong, fontSize: 13, textAlign: "center" }}>{u.name}</div>
+                            <div style={{ color: tokens.textSubtle, fontSize: 11 }}>@{u.handle}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.2px" }}>Friends · {theirFriendIds.length}</div>
+                    <div style={{ marginTop: 8, color: tokens.textMuted, fontSize: 13, lineHeight: 1.5 }}>
+                      People {user.name?.split(" ")[0] || "they"} is connected with on CCS Talks.
+                    </div>
+                    <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
+                      {theirFriendIds.map((id) => {
+                        const u = users[id];
+                        if (!u) return null;
+                        const av = u.avatarColor || "#9b0028";
+                        const avA = u.avatarAccent || "#ff6080";
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => visitUserProfile(id)}
+                            style={{
+                              borderRadius: 14,
+                              border: `1px solid ${tokens.cardBorder}`,
+                              background: tokens.surfaceAlt,
+                              padding: 10,
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              gap: 6,
+                              cursor: "pointer",
+                              color: tokens.text,
+                            }}
+                          >
+                            <div style={{ width: 44, height: 44, borderRadius: 999, background: u.avatarImage ? `url(${u.avatarImage}) center/cover no-repeat` : `linear-gradient(135deg, ${avA}, ${av})` }} />
+                            <div style={{ fontWeight: 900, color: tokens.textStrong, fontSize: 13, textAlign: "center" }}>{u.name}</div>
+                            <div style={{ color: tokens.textSubtle, fontSize: 11 }}>@{u.handle}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {theirFriendIds.length === 0 ? <div style={{ marginTop: 12, color: tokens.textMuted, fontSize: 13 }}>No friends to show yet.</div> : null}
+                  </>
+                )}
               </div>
             )}
 
             {tab === "photos" && (
               <div style={panelStyle(tokens, isLight)}>
                 <div style={{ fontWeight: 950, color: tokens.textStrong, letterSpacing: "-0.2px" }}>Cover & avatar</div>
-                <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <button onClick={() => setEditingAvatar(true)} style={{ border: `1px solid ${tokens.cardBorder}`, borderRadius: 14, overflow: "hidden", cursor: "pointer", padding: 0, height: 120, ...bannerStyle }} title="Edit banner" />
-                  <button onClick={() => setEditingAvatar(true)} style={{ border: `1px solid ${tokens.cardBorder}`, borderRadius: 14, overflow: "hidden", cursor: "pointer", padding: 0, height: 120, ...avatarStyle }} title="Edit avatar" />
-                </div>
-                <div style={{ marginTop: 10, color: tokens.textMuted, fontSize: 12 }}>Click any tile to upload an image or pick a gradient.</div>
+                {isSelf ? (
+                  <>
+                    <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <button onClick={() => setEditingAvatar(true)} style={{ border: `1px solid ${tokens.cardBorder}`, borderRadius: 14, overflow: "hidden", cursor: "pointer", padding: 0, height: 120, ...bannerStyle }} title="Edit banner" />
+                      <button onClick={() => setEditingAvatar(true)} style={{ border: `1px solid ${tokens.cardBorder}`, borderRadius: 14, overflow: "hidden", cursor: "pointer", padding: 0, height: 120, ...avatarStyle }} title="Edit avatar" />
+                    </div>
+                    <div style={{ marginTop: 10, color: tokens.textMuted, fontSize: 12 }}>Click any tile to upload an image or pick a gradient.</div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div style={{ border: `1px solid ${tokens.cardBorder}`, borderRadius: 14, overflow: "hidden", height: 120, ...bannerStyle }} aria-hidden />
+                      <div style={{ border: `1px solid ${tokens.cardBorder}`, borderRadius: 14, overflow: "hidden", height: 120, ...avatarStyle }} aria-hidden />
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -474,6 +633,54 @@ export function ProfileScreen() {
   );
 }
 
+function OtherProfileActions({ target, viewerId, tokens, subs, friends, toggleFollow, sendFriendRequest, removeFriend }) {
+  if (!target?.id || String(target.id) === String(viewerId)) return null;
+  const fid = target.id;
+  const following = subs?.follows?.includes(fid);
+  const isFriend = friends?.friends?.includes(fid);
+  const outgoing = friends?.outgoing?.includes(fid);
+
+  const share = async () => {
+    const line = typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}#profile@${target.handle || ""}` : `@${target.handle || ""}`;
+    try {
+      await navigator.clipboard.writeText(line);
+      window.alert("Profile link copied.");
+    } catch {
+      window.alert(line);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: 420 }}>
+      <button type="button" onClick={() => toggleFollow(fid)} style={headerBtn(following ? "solid" : undefined, tokens)}>
+        {following ? "Following" : "Follow"}
+      </button>
+      {isFriend ? (
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm(`Remove @${target.handle} from your friends?`)) removeFriend(fid);
+          }}
+          style={headerBtn(undefined, tokens)}
+        >
+          Remove friend
+        </button>
+      ) : outgoing ? (
+        <button type="button" disabled style={{ ...headerBtn(undefined, tokens), opacity: 0.58, cursor: "not-allowed" }}>
+          Request sent
+        </button>
+      ) : (
+        <button type="button" onClick={() => sendFriendRequest(fid)} style={headerBtn("solid", tokens)}>
+          Add friend
+        </button>
+      )}
+      <button type="button" onClick={() => void share()} style={headerBtn(undefined, tokens)}>
+        Share profile
+      </button>
+    </div>
+  );
+}
+
 function Chip({ children, tone }) {
   const bg = tone === "good"
     ? "linear-gradient(135deg, rgba(100,220,160,0.18), rgba(60,160,120,0.12))"
@@ -486,6 +693,28 @@ function Chip({ children, tone }) {
 
 // Theme-aware variant for the new info plate
 function ChipT({ children, tone, tokens, accentHex, isLight }) {
+  if (tone === "statusBadge") {
+    return (
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "5px 10px",
+          borderRadius: 999,
+          whiteSpace: "nowrap",
+          fontSize: 12,
+          fontWeight: 850,
+          border: isLight ? "1px solid rgba(20,130,170,0.30)" : "1px solid rgba(120,208,232,0.32)",
+          background: isLight ? "rgba(214,239,247,0.75)" : "linear-gradient(135deg, rgba(90,210,248,0.16), rgba(40,140,210,0.10))",
+          color: tokens.textStrong,
+        }}
+      >
+        {children}
+      </span>
+    );
+  }
+
   if (tone === "badge") {
     if (accentHex) {
       const p = badgePillColors(accentHex, !!isLight, {

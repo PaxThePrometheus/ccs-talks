@@ -37,6 +37,12 @@ export function createTicket(payload) {
   return jsonFetch("/api/tickets", { method: "POST", body: JSON.stringify(payload ?? {}) });
 }
 
+export function getVisitProfile(userId) {
+  const id = String(userId || "").trim();
+  if (!id) return Promise.reject(new Error("Missing user id."));
+  return jsonFetch(`/api/profile?visitUserId=${encodeURIComponent(id)}`, { method: "GET" });
+}
+
 export function getPosts(query = {}) {
   const qs = new URLSearchParams();
   if (query.tag) qs.set("tag", query.tag);

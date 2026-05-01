@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { GSAP_CDN } from "../cdn";
 import { useScript } from "../useScript";
 import { useAppState } from "../state/AppState";
@@ -8,6 +8,8 @@ import { Icon } from "../ui/Icon";
 import { CcsMarkdown } from "./CcsMarkdown";
 import { buildHandleDirectory } from "./MentionBody";
 import { SignatureFooter } from "./SignatureFooter";
+import { ForumImageLightbox } from "../ui/ForumImageLightbox";
+import { UserStatusBadgeRow } from "../ui/UserStatusBadgeRow";
 
 export function PostCard({
   post,
@@ -22,6 +24,7 @@ export function PostCard({
   readOnly = false,
 }) {
   const cardRef = useRef(null);
+  const [imageViewer, setImageViewer] = useState(null);
   const gsapLoaded = useScript(GSAP_CDN, { expectGlobal: "gsap" });
   const { tokens, prefs, users, visitUserProfile } = useAppState();
   const isLight = prefs.mode === "light";
@@ -122,6 +125,7 @@ export function PostCard({
             >
               {displayName}
             </span>
+            <UserStatusBadgeRow user={user} tokens={tokens} isLight={isLight} dense gap={6} />
             <span style={{ color: subtle, fontSize: 13 }}>@{handle}</span>
             <span style={{ color: subtle, fontSize: 12, marginLeft: "auto" }}>{post.time}</span>
           </div>
@@ -156,17 +160,40 @@ export function PostCard({
         </div>
         {post.imageUrl ? (
           <div style={{ marginTop: 10 }}>
-            <img
-              src={post.imageUrl}
-              alt=""
+            <button
+              type="button"
+              onClick={() =>
+                setImageViewer({
+                  src: post.imageUrl,
+                  title: post.content?.trim().slice(0, 48) || "Post",
+                })
+              }
+              title="View image"
               style={{
-                maxHeight: 360,
+                padding: 0,
+                margin: 0,
+                border: "none",
+                background: "transparent",
+                cursor: "zoom-in",
+                display: "block",
                 maxWidth: "100%",
                 borderRadius: 12,
-                objectFit: "contain",
-                border: `1px solid ${dividerColor}`,
               }}
-            />
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- user content */}
+              <img
+                src={post.imageUrl}
+                alt=""
+                style={{
+                  maxHeight: 360,
+                  maxWidth: "100%",
+                  borderRadius: 12,
+                  objectFit: "contain",
+                  border: `1px solid ${dividerColor}`,
+                  display: "block",
+                }}
+              />
+            </button>
           </div>
         ) : null}
       </div>
@@ -215,6 +242,13 @@ export function PostCard({
       <div style={{ padding: "0 1.2rem 1rem" }}>
         <SignatureFooter user={user} tokens={tokens} isLight={isLight} />
       </div>
+
+      <ForumImageLightbox
+        open={!!imageViewer?.src}
+        src={imageViewer?.src ?? ""}
+        title={imageViewer?.title ?? "Image"}
+        onClose={() => setImageViewer(null)}
+      />
     </div>
   );
 }

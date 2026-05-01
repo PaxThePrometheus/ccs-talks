@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { badgeAccentForLabel, badgePillColors } from "@/lib/ccs/badgeColors";
+import { UserStatusBadgeRow } from "./UserStatusBadgeRow";
 
 const MP_PILL_TOKENS = {
   text: "rgba(255,255,255,0.82)",
@@ -62,7 +63,7 @@ export function MiniProfilePreview({ visible, user, anchorRect, badgeColors, onR
         }}
       />
       <div style={{ padding: "12px 14px 14px", marginTop: -22 }}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
           <div
             style={{
               width: 44,
@@ -76,12 +77,14 @@ export function MiniProfilePreview({ visible, user, anchorRect, badgeColors, onR
             }}
           />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 900, color: "#fff", letterSpacing: "-0.3px", lineHeight: 1.1 }}>{user.name}</div>
-            <div style={{ marginTop: 2, color: "rgba(240,220,220,0.65)", fontSize: 12 }}>@{user.handle}</div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <Pill>{user.status}</Pill>
-            <Pill>{user.year}</Pill>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+              <div style={{ fontWeight: 900, color: "#fff", letterSpacing: "-0.3px", lineHeight: 1.1 }}>{user.name}</div>
+              <UserStatusBadgeRow user={user} chromed="modalDark" dense gap={4} />
+            </div>
+            <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+              <span style={{ color: "rgba(240,220,220,0.65)", fontSize: 12 }}>@{user.handle}</span>
+              <Pill>{user.year}</Pill>
+            </div>
           </div>
         </div>
 

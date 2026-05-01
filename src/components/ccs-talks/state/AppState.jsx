@@ -35,6 +35,8 @@ export function AppStateProvider({ children }) {
   const [accountEmail, setAccountEmail] = useState("");
   /** When set, Profile screen shows this user's public card (read-only) until cleared. */
   const [profileVisitUserId, setProfileVisitUserId] = useState(null);
+  /** Friend id order for the profile being visited (from server); cleared with visit reset. */
+  const [visitedProfileFriends, setVisitedProfileFriends] = useState(null);
   /** Milliseconds epoch when username edit is allowed again (server: `usernameCooldownUntil`). */
   const [usernameCooldownUntil, setUsernameCooldownUntil] = useState(null);
   /** Badge label → hex map from `/api/landing` (Forum poll keeps it fresh). */
@@ -230,15 +232,19 @@ export function AppStateProvider({ children }) {
   }, [prefs.mode]);
 
   useEffect(() => {
-    if (page !== "profile") setProfileVisitUserId(null);
+    if (page !== "profile") {
+      setProfileVisitUserId(null);
+      setVisitedProfileFriends(null);
+    }
   }, [page]);
 
   const users = useMemo(() => {
+    const r = role || "student";
     return {
       ...feedUsersById,
-      [profile.id]: profile,
+      [profile.id]: { ...profile, forumRole: r },
     };
-  }, [profile, feedUsersById]);
+  }, [profile, feedUsersById, role]);
 
   const mergeFeedUsers = useCallback((incoming) => {
     if (!incoming || typeof incoming !== "object") return;
@@ -268,14 +274,42 @@ export function AppStateProvider({ children }) {
     [refreshFeed]
   );
 
-  const visitUserProfile = useCallback((userId) => {
-    if (!userId) return;
-    setProfileVisitUserId(String(userId));
-    setPage("profile");
-  }, [setPage]);
+  const fetchAndMergeVisit = useCallback((userId) => {
+    const id = String(userId || "").trim();
+    if (!id) return Promise.resolve(null);
+    return api.getVisitProfile(id).then((bundle) => {
+      if (!bundle?.profile || String(bundle.profile.id) !== id) return null;
+      setVisitedProfileFriends({ userId: id, friendIds: Array.isArray(bundle.friendIds) ? bundle.friendIds : [] });
+      setFeedUsersById((prev) => ({
+        ...prev,
+        ...(bundle.friendMiniUsers && typeof bundle.friendMiniUsers === "object" ? bundle.friendMiniUsers : {}),
+        [bundle.profile.id]: { ...DEFAULT_PROFILE, ...bundle.profile },
+      }));
+      return bundle;
+    });
+  }, []);
+
+  const visitUserProfile = useCallback(
+    (userId) => {
+      if (!userId) return;
+      const id = String(userId);
+      setProfileVisitUserId(id);
+      setVisitedProfileFriends(null);
+      setPage("profile");
+      void fetchAndMergeVisit(id).catch(() => {});
+    },
+    [setPage, fetchAndMergeVisit]
+  );
+
+  const reloadVisitedProfile = useCallback(() => {
+    const id = profileVisitUserId;
+    if (!id) return;
+    void fetchAndMergeVisit(id).catch(() => {});
+  }, [profileVisitUserId, fetchAndMergeVisit]);
 
   const resetProfileVisit = useCallback(() => {
     setProfileVisitUserId(null);
+    setVisitedProfileFriends(null);
   }, []);
 
   const addActivity = (a) => {
@@ -439,7 +473,9 @@ export function AppStateProvider({ children }) {
       page,
       setPage,
       profileVisitUserId,
+      visitedProfileFriends,
       visitUserProfile,
+      reloadVisitedProfile,
       resetProfileVisit,
       profile,
       setProfile,
@@ -498,7 +534,9 @@ export function AppStateProvider({ children }) {
     [
       page,
       profileVisitUserId,
+      visitedProfileFriends,
       visitUserProfile,
+      reloadVisitedProfile,
       resetProfileVisit,
       profile,
       users,

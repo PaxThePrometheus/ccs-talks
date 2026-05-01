@@ -35,6 +35,8 @@ export function AppStateProvider({ children }) {
   const [accountEmail, setAccountEmail] = useState("");
   /** When set, Profile screen shows this user's public card (read-only) until cleared. */
   const [profileVisitUserId, setProfileVisitUserId] = useState(null);
+  /** Milliseconds epoch when username edit is allowed again (server: `usernameCooldownUntil`). */
+  const [usernameCooldownUntil, setUsernameCooldownUntil] = useState(null);
 
   /** Skip first debounced PATCH after we just applied server snapshot (prevents PATCH loop). */
   const lastSyncedExtrasRef = useRef("");
@@ -49,6 +51,7 @@ export function AppStateProvider({ children }) {
       setSubs(normalizeSubs(me.subs));
       setActivities(normalizeActivities(me.activities));
       setRole(me.role || "student");
+      setUsernameCooldownUntil(typeof me.usernameCooldownUntil === "number" ? me.usernameCooldownUntil : null);
       setAccountEmail(typeof me.email === "string" ? me.email : "");
       lastSyncedExtrasRef.current = JSON.stringify({
         prefs: normalizePrefs(me.prefs),
@@ -57,7 +60,7 @@ export function AppStateProvider({ children }) {
         activities: normalizeActivities(me.activities),
       });
     },
-    [setProfile, setIsAuthed, setPrefs, setFriends, setSubs, setActivities, setAccountEmail]
+    [setProfile, setIsAuthed, setPrefs, setFriends, setSubs, setActivities, setAccountEmail, setUsernameCooldownUntil]
   );
 
   const persistFullProfile = useCallback(
@@ -77,8 +80,16 @@ export function AppStateProvider({ children }) {
             [out.profile.id]: { ...DEFAULT_PROFILE, ...prev[out.profile.id], ...out.profile },
           }));
         }
+        if (typeof out?.usernameCooldownUntil === "number" || out?.usernameCooldownUntil === null) {
+          setUsernameCooldownUntil(out.usernameCooldownUntil);
+        }
       } catch (e) {
-        if (e?.status === 409) window.alert("That handle is already taken.");
+        if (e?.status === 429) {
+          const na = e?.data?.nextAllowedAt;
+          const hint = typeof na === "number" ? ` Try again after ${new Date(na).toLocaleString()}.` : "";
+          window.alert(String(e.message || "Username changes are temporarily limited.") + hint);
+          if (typeof na === "number") setUsernameCooldownUntil(na);
+        } else if (e?.status === 409) window.alert("That username is already taken.");
         else if (e?.status === 413) window.alert(e.message || "Image too large to save.");
         else console.warn("[ccs] persistFullProfile", e);
       }
@@ -127,6 +138,7 @@ export function AppStateProvider({ children }) {
     setIsAuthed(false);
     setRole("student");
     setAccountEmail("");
+    setUsernameCooldownUntil(null);
   };
 
   /** Bootstrap server feed / session cookie when running inside Next.js. */
@@ -455,6 +467,7 @@ export function AppStateProvider({ children }) {
       role,
       accountEmail,
       isStaff: role === "admin" || role === "moderator",
+      usernameCooldownUntil,
       signIn,
       signOut,
       hydrateAccountFromServer,
@@ -485,6 +498,7 @@ export function AppStateProvider({ children }) {
       isAuthed,
       role,
       accountEmail,
+      usernameCooldownUntil,
       reports,
       bannedUserIds,
       refreshFeed,

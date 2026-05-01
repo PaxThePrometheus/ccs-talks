@@ -69,5 +69,26 @@ export function ddlFragments() {
       updated_at bigint NOT NULL,
       updated_by text NOT NULL DEFAULT ''
     )`,
+    `CREATE TABLE IF NOT EXISTS ccs_announcements (
+      id text PRIMARY KEY,
+      title text NOT NULL,
+      body text NOT NULL DEFAULT '',
+      pinned boolean NOT NULL DEFAULT false,
+      author_id text NOT NULL DEFAULT '',
+      created_at bigint NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS ccs_announcements_created_idx ON ccs_announcements (created_at DESC)`,
+    `CREATE TABLE IF NOT EXISTS ccs_tickets (
+      id text PRIMARY KEY,
+      user_id text NOT NULL REFERENCES ccs_users(id) ON DELETE CASCADE,
+      subject text NOT NULL,
+      body text NOT NULL,
+      status text NOT NULL DEFAULT 'open',
+      staff_reply text NOT NULL DEFAULT '',
+      created_at bigint NOT NULL,
+      updated_at bigint NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS ccs_tickets_user_idx ON ccs_tickets (user_id)`,
+    `CREATE INDEX IF NOT EXISTS ccs_tickets_status_idx ON ccs_tickets (status)`,
   ];
 }

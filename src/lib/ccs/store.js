@@ -13,10 +13,22 @@ import {
 import { newPasswordRecord, verifyPassword } from "./auth";
 import { authorProfilesByIds, buildFeed } from "./feed";
 import { getDb } from "./drizzle-client";
+import {
+  CCS_OLFU_UNIVERSITY,
+  USERNAME_CHANGE_COOLDOWN_MS,
+  mergeProfileFieldOptions,
+  sanitizeProfileSelectFields,
+} from "./profileOptions";
 import { toPublicProfile } from "./publicUser";
 import * as schema from "./schema";
 
 const PRESENCE_WINDOW_MS = 120_000;
+
+async function readMergedProfileFieldOptionsDb(db) {
+  const [row] = await db.select().from(schema.ccsSiteSettings).where(eq(schema.ccsSiteSettings.key, "site")).limit(1);
+  const patch = row?.value && typeof row.value === "object" ? row.value.profileFieldOptions : null;
+  return mergeProfileFieldOptions(patch);
+}
 
 function coerceArr(x) {
   return Array.isArray(x) ? x : [];
@@ -234,6 +246,7 @@ export async function registerAccountRow(email, password, name, emailLocalSugges
   }
 
   const profile = { ...DEFAULT_PROFILE, id, name, handle };
+  profile.university = CCS_OLFU_UNIVERSITY;
 
   try {
     await db.insert(schema.ccsUsers).values({
@@ -442,8 +455,6 @@ export async function addCommentEnvelope(postId, viewerUserId, text, imageUrl = 
 const PROFILE_KEYS = new Set([
   "name",
   "handle",
-  "status",
-  "university",
   "college",
   "program",
   "year",
@@ -486,6 +497,15 @@ function clampMediaField(key, raw) {
 export function accountWireFromRow(row) {
   const base = typeof row.profile === "object" && row.profile ? row.profile : {};
   const merged = { ...DEFAULT_PROFILE, ...base, id: row.id };
+  merged.university = CCS_OLFU_UNIVERSITY;
+
+  const hc = Number(merged.handleChangedAt || 0);
+  /** Milliseconds timestamp when username can change again; null when allowed now (or never changed). */
+  let usernameCooldownUntil = null;
+  if (hc > 0 && Date.now() - hc < USERNAME_CHANGE_COOLDOWN_MS) {
+    usernameCooldownUntil = hc + USERNAME_CHANGE_COOLDOWN_MS;
+  }
+
   return {
     email: row.email || "",
     profile: toPublicProfile(merged),
@@ -495,6 +515,7 @@ export function accountWireFromRow(row) {
     activities: normalizeActivities(row.activities),
     role: row.role || "student",
     banned: !!row.banned,
+    usernameCooldownUntil,
   };
 }
 
@@ -528,7 +549,17 @@ export async function patchAccountBundles(userId, body) {
   const [row] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, userId)).limit(1);
   if (!row) return { unauthorized: true };
 
-  let nextProfile = { ...DEFAULT_PROFILE, ...(typeof row.profile === "object" ? row.profile : {}), id: userId };
+  const baseline = { ...DEFAULT_PROFILE, ...(typeof row.profile === "object" ? row.profile : {}), id: userId };
+  let nextProfile = { ...baseline };
+
+  const normalizeHandleLocal = (h) =>
+    String(h || "")
+      .replace(/[^\w.]/g, "_")
+      .slice(0, 32);
+
+  const prevHandleNorm = normalizeHandleLocal(baseline.handle);
+  /** @type {number | undefined} */
+  let handleChangedAtToSet;
 
   const patchProfile = body && typeof body.profile === "object" ? body.profile : null;
   if (patchProfile) {
@@ -536,10 +567,20 @@ export async function patchAccountBundles(userId, body) {
       for (const [k, v] of Object.entries(patchProfile)) {
         if (!PROFILE_KEYS.has(k)) continue;
         if (k === "handle") {
-          nextProfile.handle =
-            String(v || "")
-              .replace(/[^\w.]/g, "_")
-              .slice(0, 32) || nextProfile.handle;
+          const fromPatch = normalizeHandleLocal(v);
+          nextProfile.handle = fromPatch || prevHandleNorm || normalizeHandleLocal(nextProfile.handle) || "";
+
+          const newNorm = normalizeHandleLocal(nextProfile.handle);
+          if (newNorm && newNorm !== prevHandleNorm) {
+            const last = Number(baseline.handleChangedAt || 0);
+            if (last > 0 && Date.now() - last < USERNAME_CHANGE_COOLDOWN_MS) {
+              return {
+                usernameCooldown: true,
+                nextAllowedAt: last + USERNAME_CHANGE_COOLDOWN_MS,
+              };
+            }
+            handleChangedAtToSet = Date.now();
+          }
         } else if (k === "name") nextProfile.name = String(v || "").slice(0, 80);
         else if (k === "bio") nextProfile.bio = String(v || "").slice(0, 280);
         else if (k === "signature") nextProfile.signature = String(v || "").slice(0, 280);
@@ -555,6 +596,11 @@ export async function patchAccountBundles(userId, body) {
 
     if (await isHandleTakenElsewhere(db, nextProfile.handle, userId)) return { handleTaken: true };
   }
+
+  const fieldOpts = await readMergedProfileFieldOptionsDb(db);
+  sanitizeProfileSelectFields(nextProfile, fieldOpts);
+  nextProfile.university = CCS_OLFU_UNIVERSITY;
+  if (handleChangedAtToSet !== undefined) nextProfile.handleChangedAt = handleChangedAtToSet;
 
   const currPrefs = normalizePrefs(row.prefs);
   const currFriends = normalizeFriends(row.friendsState);
@@ -593,11 +639,66 @@ export async function patchAccountBundles(userId, body) {
 export async function patchUserProfile(userId, body) {
   const merged = await patchAccountBundles(userId, { profile: body });
   if (merged?.unauthorized) return { unauthorized: true };
+  if (merged?.usernameCooldown) return { usernameCooldown: true, nextAllowedAt: merged.nextAllowedAt };
   if (merged?.handleTaken) return { handleTaken: true };
   if (merged?.mediaTooLarge) return { mediaTooLarge: true, message: merged.message };
   if (!merged?.wire) return { unauthorized: true };
 
-  return { profile: merged.wire.profile };
+  return {
+    profile: merged.wire.profile,
+    usernameCooldownUntil: merged.wire.usernameCooldownUntil ?? null,
+  };
+}
+
+export async function listTicketsForUser(userId) {
+  const db = await getDb();
+  const rows = await db
+    .select()
+    .from(schema.ccsTickets)
+    .where(eq(schema.ccsTickets.userId, userId))
+    .orderBy(desc(schema.ccsTickets.updatedAt));
+  return rows.map((r) => ({
+    id: r.id,
+    subject: r.subject,
+    body: r.body,
+    status: r.status,
+    staffReply: r.staffReply || "",
+    createdAt: Number(r.createdAt) || 0,
+    updatedAt: Number(r.updatedAt) || 0,
+  }));
+}
+
+export async function createTicketForUser(userId, payload = {}) {
+  const subject = String(payload.subject ?? "").trim().slice(0, 200);
+  const bodyText = String(payload.body ?? "").trim().slice(0, 8000);
+  if (!subject || !bodyText) return { error: "missing_fields", status: 400 };
+
+  const db = await getDb();
+  const id = `tk_${randomUUID()}`;
+  const now = Date.now();
+
+  await db.insert(schema.ccsTickets).values({
+    id,
+    userId,
+    subject,
+    body: bodyText,
+    status: "open",
+    staffReply: "",
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return {
+    ticket: {
+      id,
+      subject,
+      body: bodyText,
+      status: "open",
+      staffReply: "",
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
 }
 
 export async function presenceTouch(userId) {

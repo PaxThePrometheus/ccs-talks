@@ -1,43 +1,89 @@
 "use client";
 
+import { CCS_OLFU_UNIVERSITY } from "@/lib/ccs/profileOptions";
 import { useEffect, useMemo, useState } from "react";
+import * as api from "../api/ccsApi";
 
-export function ProfileEditModal({ open, profile, onCancel, onSave }) {
+function selectStyle() {
+  return {
+    width: "100%",
+    boxSizing: "border-box",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(0,0,0,0.18)",
+    color: "#fff",
+    padding: "10px 12px",
+    outline: "none",
+    fontSize: 13,
+  };
+}
+
+export function ProfileEditModal({ open, profile, usernameCooldownUntil = null, onCancel, onSave }) {
   const [draft, setDraft] = useState(profile);
+  /** @type {{ programs: string[], campuses: string[], years: string[], focuses: string[], orgs: string[] } | null} */
+  const [fieldOptions, setFieldOptions] = useState(null);
 
   useEffect(() => {
     if (open) setDraft(profile);
   }, [open, profile]);
 
-  const fields = useMemo(
+  useEffect(() => {
+    if (!open) return;
+    let cancel = false;
+    void api
+      .getProfileFieldOptions()
+      .then((d) => {
+        if (!cancel && d?.options && typeof d.options === "object") setFieldOptions(d.options);
+      })
+      .catch(() => {
+        if (!cancel) setFieldOptions(null);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [open]);
+
+  const cooldownActive = typeof usernameCooldownUntil === "number" && Date.now() < usernameCooldownUntil;
+
+  const fieldsLeft = useMemo(() => [["name", "Name"]], []);
+  const fieldsRightTop = useMemo(() => [["college", "College"]], []);
+
+  const selectFields = useMemo(
     () => [
-      ["name", "Name"],
-      ["handle", "Handle"],
-      ["status", "Status"],
-      ["university", "University"],
-      ["college", "College"],
-      ["program", "Program / Course"],
-      ["year", "Year"],
-      ["campus", "Campus"],
-      ["focus", "Focus"],
-      ["org", "Org"],
-      ["bio", "Bio"],
-      ["signature", "Forum signature (text)"],
-      ["signatureImage", "Signature banner image (https URL or data URL)"],
-      ["signatureLink", "Signature link (https only)"],
+      ["program", "Program / course", "programs"],
+      ["campus", "Campus", "campuses"],
+      ["year", "Year", "years"],
+      ["focus", "Focus", "focuses"],
+      ["org", "Org", "orgs"],
     ],
     []
   );
 
   if (!open) return null;
 
-  const onChange = (k, v) => {
-    if (k === "badges") {
-      setDraft((d) => ({ ...d, badges: v.split(",").map((x) => x.trim()).filter(Boolean) }));
-    } else {
-      setDraft((d) => ({ ...d, [k]: v }));
-    }
-  };
+  const onChange = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
+
+  function renderSelect(field, label, optKey) {
+    const opts = fieldOptions?.[optKey];
+    const list = Array.isArray(opts) && opts.length ? opts : [];
+
+    return (
+      <div key={field}>
+        <div style={{ fontSize: 12, color: "rgba(240,220,220,0.70)", marginBottom: 6 }}>{label}</div>
+        <select value={draft?.[field] ?? ""} onChange={(e) => onChange(field, e.target.value)} style={selectStyle()}>
+          <option value="">—</option>
+          {draft?.[field] && !list.includes(String(draft[field]).trim()) ? (
+            <option value={draft[field]}>{draft[field]} (saved)</option>
+          ) : null}
+          {list.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -80,41 +126,80 @@ export function ProfileEditModal({ open, profile, onCancel, onSave }) {
         <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid rgba(255,255,255,0.10)" }}>
           <div style={{ fontWeight: 900, color: "#fff", letterSpacing: "-0.3px" }}>Edit profile</div>
           <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={onCancel} style={btnStyle("ghost")}>
+            <button type="button" onClick={onCancel} style={btnStyle("ghost")}>
               Cancel
             </button>
-            <button onClick={() => onSave?.(draft)} style={btnStyle("solid")}>
+            <button type="button" onClick={() => onSave?.(draft)} style={btnStyle("solid")}>
               Save
             </button>
           </div>
         </div>
 
         <div className="ccs-stack-mobile" style={{ padding: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {fields.map(([k, label]) => (
-            <div
-              key={k}
-              style={{
-                gridColumn: k === "bio" || k === "signature" || k === "signatureImage" ? "1 / -1" : "auto",
-              }}
-            >
+          {fieldsLeft.map(([k, label]) => (
+            <div key={k}>
               <div style={{ fontSize: 12, color: "rgba(240,220,220,0.70)", marginBottom: 6 }}>{label}</div>
-              {k === "bio" || k === "signature" ? (
-                <textarea
-                  value={draft?.[k] ?? ""}
-                  onChange={(e) => onChange(k, e.target.value)}
-                  rows={k === "signature" ? 3 : 4}
-                  maxLength={k === "signature" ? 280 : undefined}
-                  style={inputStyle(true)}
-                />
-              ) : (
-                <input
-                  value={draft?.[k] ?? ""}
-                  onChange={(e) => onChange(k, e.target.value)}
-                  style={inputStyle(false)}
-                />
-              )}
+              <input value={draft?.[k] ?? ""} onChange={(e) => onChange(k, e.target.value)} style={inputStyle(false)} />
             </div>
           ))}
+
+          <div>
+            <div style={{ fontSize: 12, color: "rgba(240,220,220,0.70)", marginBottom: 6 }}>Username</div>
+            <input
+              value={draft?.handle ?? ""}
+              disabled={cooldownActive}
+              onChange={(e) => onChange("handle", e.target.value)}
+              style={{ ...inputStyle(false), opacity: cooldownActive ? 0.55 : 1 }}
+            />
+            {cooldownActive && (
+              <div style={{ marginTop: 6, fontSize: 11, color: "rgba(255,180,190,0.85)" }}>
+                Username can be changed again after {new Date(usernameCooldownUntil).toLocaleString()}.
+              </div>
+            )}
+          </div>
+
+          <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 12, color: "rgba(240,220,220,0.70)", marginBottom: 6 }}>Status</div>
+              <div style={{ ...inputStyle(false), opacity: 0.75 }}>{draft?.status || "—"}</div>
+              <div style={{ marginTop: 4, fontSize: 11, color: "rgba(240,220,220,0.50)" }}>Assigned by moderators; contact staff to update.</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: "rgba(240,220,220,0.70)", marginBottom: 6 }}>University</div>
+              <div style={{ ...inputStyle(false), opacity: 0.75 }}>{CCS_OLFU_UNIVERSITY}</div>
+            </div>
+          </div>
+
+          {selectFields.map(([field, label, optKey]) => (
+            <div key={field}>{renderSelect(field, label, optKey)}</div>
+          ))}
+
+          {fieldsRightTop.map(([k, label]) => (
+            <div key={k} style={{ gridColumn: "1 / -1" }}>
+              <div style={{ fontSize: 12, color: "rgba(240,220,220,0.70)", marginBottom: 6 }}>{label}</div>
+              <input value={draft?.[k] ?? ""} onChange={(e) => onChange(k, e.target.value)} style={inputStyle(false)} />
+            </div>
+          ))}
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={{ fontSize: 12, color: "rgba(240,220,220,0.70)", marginBottom: 6 }}>Bio</div>
+            <textarea value={draft?.bio ?? ""} onChange={(e) => onChange("bio", e.target.value)} rows={4} style={inputStyle(true)} />
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={{ fontSize: 12, color: "rgba(240,220,220,0.70)", marginBottom: 6 }}>Forum signature (text)</div>
+            <textarea value={draft?.signature ?? ""} onChange={(e) => onChange("signature", e.target.value)} rows={3} maxLength={280} style={inputStyle(true)} />
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={{ fontSize: 12, color: "rgba(240,220,220,0.70)", marginBottom: 6 }}>Signature banner image (https URL or data URL)</div>
+            <input value={draft?.signatureImage ?? ""} onChange={(e) => onChange("signatureImage", e.target.value)} style={inputStyle(false)} />
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={{ fontSize: 12, color: "rgba(240,220,220,0.70)", marginBottom: 6 }}>Signature link (https only)</div>
+            <input value={draft?.signatureLink ?? ""} onChange={(e) => onChange("signatureLink", e.target.value)} style={inputStyle(false)} />
+          </div>
         </div>
       </div>
     </div>
@@ -161,4 +246,3 @@ function inputStyle(isTextarea) {
     resize: isTextarea ? "vertical" : "none",
   };
 }
-

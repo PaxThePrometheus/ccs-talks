@@ -67,3 +67,23 @@ export const ccsPresence = pgTable("ccs_presence", {
   userId: text("user_id").primaryKey(),
   lastSeen: bigint("last_seen", { mode: "number" }).notNull(),
 });
+
+export const ccsAnnouncements = pgTable("ccs_announcements", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  body: text("body").notNull().default(""),
+  pinned: boolean("pinned").notNull().default(false),
+  authorId: text("author_id").notNull().default(""),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+
+export const ccsTickets = pgTable("ccs_tickets", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  status: text("status").notNull().default("open"),
+  staffReply: text("staff_reply").notNull().default(""),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});

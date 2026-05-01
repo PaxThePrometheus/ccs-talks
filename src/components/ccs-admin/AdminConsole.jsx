@@ -9,6 +9,8 @@ const SECTIONS = [
   { key: "landing", icon: "🖼", label: "Landing page" },
   { key: "users", icon: "👥", label: "Users & roles" },
   { key: "posts", icon: "📰", label: "Posts" },
+  { key: "announcements", icon: "📣", label: "Announcements" },
+  { key: "tickets", icon: "🎫", label: "Tickets" },
   { key: "audit", icon: "🧾", label: "Audit log" },
   { key: "site", icon: "🛠", label: "Site settings" },
 ];
@@ -63,6 +65,8 @@ export function AdminConsole({ viewer, inviteRequired }) {
           {section === "landing" && <AdminLandingPane onError={handleErr} />}
           {section === "users" && <UsersPane viewer={viewer} onError={handleErr} inviteRequired={inviteRequired} />}
           {section === "posts" && <PostsPane onError={handleErr} />}
+          {section === "announcements" && <AnnouncementsPane viewer={viewer} onError={handleErr} />}
+          {section === "tickets" && <TicketsPane viewer={viewer} onError={handleErr} />}
           {section === "audit" && <AuditPane onError={handleErr} />}
           {section === "site" && <SitePane viewer={viewer} onError={handleErr} />}
         </div>
@@ -294,6 +298,19 @@ function UsersPane({ viewer, onError, inviteRequired }) {
                   @{u.profile?.handle || "—"} · {u.email} · <code style={code}>{u.id}</code>
                 </div>
                 {u.banned && u.bannedReason && <div style={{ fontSize: 12, color: t.bad, marginTop: 2 }}>“{u.bannedReason}”</div>}
+                {(viewer.role === "admin" || viewer.role === "moderator") ? (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>STATUS</div>
+                    <input
+                      title="Visible on profile — students cannot edit this themselves."
+                      defaultValue={u.profile?.status || ""}
+                      onBlur={(e) => patchUser(u.id, { status: e.target.value.trim() })}
+                      placeholder="e.g. Student · Dean’s Lister"
+                      style={{ ...inp(260), fontSize: 12 }}
+                    />
+                  </div>
+                ) : null}
+
                 <div style={{ marginTop: 10 }}>
                   <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.12em", color: t.muted, marginBottom: 4 }}>BADGES</div>
                   <BadgesEditor
@@ -478,6 +495,186 @@ function AuditPane({ onError }) {
   );
 }
 
+/** ---------- announcements ---------- */
+function AnnouncementsPane({ viewer, onError }) {
+  const [rows, setRows] = useState([]);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [pinned, setPinned] = useState(false);
+
+  const reload = useCallback(async () => {
+    try {
+      const data = await jsonFetch("/api/admin/announcements");
+      setRows(Array.isArray(data?.announcements) ? data.announcements : []);
+    } catch (e) {
+      onError(e);
+    }
+  }, [onError]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const isAdmin = viewer.role === "admin";
+
+  async function create() {
+    try {
+      await jsonFetch("/api/admin/announcements", { method: "POST", body: JSON.stringify({ title, body, pinned }) });
+      setTitle("");
+      setBody("");
+      setPinned(false);
+      await reload();
+    } catch (e) {
+      onError(e);
+    }
+  }
+
+  async function remove(id) {
+    if (!window.confirm("Delete this announcement?")) return;
+    try {
+      await jsonFetch(`/api/admin/announcements/${encodeURIComponent(id)}`, { method: "DELETE" });
+      await reload();
+    } catch (e) {
+      onError(e);
+    }
+  }
+
+  return (
+    <>
+      {isAdmin ? (
+        <section style={panel}>
+          <header style={panelHeader}>Post announcement</header>
+          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" style={inp(520)} />
+            <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Body" rows={6} style={{ ...inp(520), height: 140, resize: "vertical", fontFamily: "inherit" }} />
+            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: t.text }}>
+              <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />
+              Pin to top
+            </label>
+            <button type="button" disabled={!title.trim()} onClick={() => void create()} style={btn("solid")}>
+              Publish
+            </button>
+          </div>
+        </section>
+      ) : (
+        <section style={panel}>
+          <header style={panelHeader}>Announcements</header>
+          <div style={{ padding: 16, fontSize: 13, color: t.muted }}>Only administrators can create or delete announcements. You can review the list below.</div>
+        </section>
+      )}
+
+      <section style={panel}>
+        <header style={panelHeader}>Public feed · {rows.length}</header>
+        {rows.length === 0 && <div style={{ padding: 16, color: t.muted, fontSize: 13 }}>No announcements.</div>}
+        {rows.map((a) => (
+          <div key={a.id} style={row}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 900, color: t.textStrong }}>{a.pinned ? "📌 " : ""}{a.title}</div>
+              <div style={{ marginTop: 6, color: t.muted, fontSize: 13, whiteSpace: "pre-wrap" }}>{a.body}</div>
+              <div style={{ marginTop: 8, fontSize: 11, color: t.muted }}>{new Date(a.createdAt).toLocaleString()}</div>
+            </div>
+            {isAdmin ? (
+              <button type="button" onClick={() => void remove(a.id)} style={btn("danger")}>
+                Delete
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </section>
+    </>
+  );
+}
+
+/** ---------- tickets ---------- */
+function TicketsPane({ onError }) {
+  const [tickets, setTickets] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("");
+
+  const reload = useCallback(async () => {
+    try {
+      const qs = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : "";
+      const data = await jsonFetch(`/api/admin/tickets${qs}`);
+      setTickets(Array.isArray(data?.tickets) ? data.tickets : []);
+    } catch (e) {
+      onError(e);
+    }
+  }, [onError, statusFilter]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  return (
+    <section style={panel}>
+      <header style={{ ...panelHeader, gap: 12, flexWrap: "wrap" }}>
+        <span>Tickets · {tickets.length}</span>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={inp(140)}>
+          <option value="">All statuses</option>
+          <option value="open">Open</option>
+          <option value="closed">Closed</option>
+        </select>
+      </header>
+      {tickets.length === 0 && <div style={{ padding: 16, color: t.muted, fontSize: 13 }}>No tickets.</div>}
+      {tickets.map((tk) => (
+        <TicketStaffRow key={tk.id} tk={tk} onError={onError} onSaved={reload} />
+      ))}
+    </section>
+  );
+}
+
+function TicketStaffRow({ tk, onError, onSaved }) {
+  const [reply, setReply] = useState(tk.staffReply || "");
+  const [status, setStatus] = useState(tk.status || "open");
+
+  useEffect(() => {
+    setReply(tk.staffReply || "");
+    setStatus(tk.status || "open");
+  }, [tk.id, tk.staffReply, tk.status]);
+
+  async function save() {
+    try {
+      await jsonFetch(`/api/admin/tickets/${encodeURIComponent(tk.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status, staffReply: reply }),
+      });
+      await onSaved();
+    } catch (e) {
+      onError(e);
+    }
+  }
+
+  return (
+    <div style={{ ...row, alignItems: "start" }}>
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontWeight: 900, color: t.textStrong }}>{tk.subject}</div>
+        <code style={code}>{tk.userId}</code>
+        <div style={{ fontSize: 13, color: t.muted, whiteSpace: "pre-wrap" }}>{tk.body}</div>
+        <div style={{ fontSize: 11, color: t.muted }}>Updated {new Date(tk.updatedAt).toLocaleString()}</div>
+
+        <textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Staff reply (visible to user)" rows={3} style={{ ...inp(560), height: 72, resize: "vertical", fontFamily: "inherit" }} />
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} style={inp(120)}>
+            <option value="open">open</option>
+            <option value="closed">closed</option>
+          </select>
+          <button type="button" onClick={() => void save()} style={btn("solid")}>
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PROFILE_OPTION_FIELDS = Object.freeze([
+  ["programs", "Programs / courses"],
+  ["campuses", "Campuses"],
+  ["years", "Years"],
+  ["focuses", "Focus areas"],
+  ["orgs", "Organizations"],
+]);
+
 /** ---------- site settings ---------- */
 function SitePane({ viewer, onError }) {
   const [settings, setSettings] = useState(null);
@@ -558,6 +755,34 @@ function SitePane({ viewer, onError }) {
             }}
             style={{ ...inp(280), height: 88, resize: "vertical", fontFamily: "var(--font-geist-mono, monospace)" }}
           />
+        </div>
+
+        <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${t.border}` }}>
+          <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>Profile field dropdowns</div>
+          <div style={{ color: t.muted, fontSize: 12, marginTop: 4 }}>
+            One value per line — used in the forum profile editor. Stored in <code style={code}>profileFieldOptions</code>.
+          </div>
+          {PROFILE_OPTION_FIELDS.map(([fieldKey, title]) => (
+            <div key={fieldKey} style={{ ...row, marginTop: 12, alignItems: "start" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>{title}</div>
+              </div>
+              <textarea
+                key={(settings.profileFieldOptions?.[fieldKey] || []).join("\n")}
+                disabled={!isAdmin}
+                defaultValue={(settings.profileFieldOptions?.[fieldKey] || []).join("\n")}
+                onBlur={(e) => {
+                  const list = e.target.value
+                    .split(/[\n]+/)
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                    .slice(0, 96);
+                  save({ profileFieldOptions: { [fieldKey]: list } });
+                }}
+                style={{ ...inp(320), height: 96, resize: "vertical", fontFamily: "var(--font-geist-mono, monospace)" }}
+              />
+            </div>
+          ))}
         </div>
 
         {saving && <div style={{ padding: "8px 16px", fontSize: 12, color: t.muted }}>Saving…</div>}

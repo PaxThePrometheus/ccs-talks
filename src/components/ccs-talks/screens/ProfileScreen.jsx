@@ -33,6 +33,7 @@ export function ProfileScreen() {
     prefs,
     publishPost,
     persistFullProfile,
+    usernameCooldownUntil,
   } = useAppState();
   const isLight = prefs.mode === "light";
   const [isEditing, setIsEditing] = useState(false);
@@ -441,6 +442,7 @@ export function ProfileScreen() {
       <ProfileEditModal
         open={isEditing}
         profile={profile}
+        usernameCooldownUntil={usernameCooldownUntil}
         onCancel={() => setIsEditing(false)}
         onSave={async (next) => {
           await persistFullProfile(next);

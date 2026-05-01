@@ -43,6 +43,9 @@ export function NavBar({ setPage, showFull }) {
       {showFull && (
         <div className="ccs-hide-mobile" style={{ display: "flex", gap: "1.6rem", alignItems: "center" }}>
           <span onClick={() => setPage("about")} style={{ color: tokens.textMuted, cursor: "pointer", fontSize: 14, fontWeight: 700 }}>About</span>
+          <span onClick={() => setPage("announcements")} style={{ color: tokens.textMuted, cursor: "pointer", fontSize: 14, fontWeight: 700 }}>
+            Announcements
+          </span>
           <span onClick={() => setPage("forum")} style={{ color: tokens.textMuted, cursor: "pointer", fontSize: 14, fontWeight: 700 }}>Browse forum</span>
           <span
             onClick={() => {

@@ -47,7 +47,7 @@ export function OnboardingModal({ open }) {
 
   const nextFromProfile = async () => {
     if (!String(profile.handle || "").trim()) {
-      setErr("Pick a handle to continue.");
+      setErr("Pick a username to continue.");
       return;
     }
     setErr("");
@@ -116,8 +116,8 @@ export function OnboardingModal({ open }) {
               <input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} style={inp(tokens)} placeholder="Full name" />
             </label>
             <label style={{ fontSize: 12, fontWeight: 800, color: tokens.textStrong }}>
-              Handle
-              <input value={profile.handle} onChange={(e) => setProfile({ ...profile, handle: e.target.value })} style={inp(tokens)} placeholder="unique_handle" />
+              Username
+              <input value={profile.handle} onChange={(e) => setProfile({ ...profile, handle: e.target.value })} style={inp(tokens)} placeholder="letters_numbers" />
             </label>
             <label style={{ fontSize: 12, fontWeight: 800, color: tokens.textStrong }}>
               Program

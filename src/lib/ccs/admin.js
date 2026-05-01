@@ -16,6 +16,7 @@ import {
   resolveViewerFromSession,
   uniqueHandle,
 } from "./store";
+import { CCS_OLFU_UNIVERSITY, DEFAULT_PROFILE_FIELD_OPTIONS, mergeProfileFieldOptions } from "./profileOptions";
 import * as schema from "./schema";
 
 export const ROLE_STUDENT = "student";
@@ -30,6 +31,7 @@ export const DEFAULT_SITE_SETTINGS = {
   requireEmailVerification: false,
   autoModLinkPosts: false,
   bannedWords: [],
+  profileFieldOptions: DEFAULT_PROFILE_FIELD_OPTIONS,
 };
 
 /** Resolve full row (incl. role/banned) — store.resolveViewerFromSession returns a domain shim. */
@@ -199,9 +201,16 @@ export async function listAudit({ limit = 100 } = {}) {
 export async function getSiteSettings() {
   const db = await getDb();
   const [row] = await db.select().from(schema.ccsSiteSettings).where(eq(schema.ccsSiteSettings.key, "site")).limit(1);
-  if (!row) return { ...DEFAULT_SITE_SETTINGS };
+  if (!row) return { ...DEFAULT_SITE_SETTINGS, profileFieldOptions: mergeProfileFieldOptions(null) };
   const v = row.value && typeof row.value === "object" ? row.value : {};
-  return { ...DEFAULT_SITE_SETTINGS, ...v };
+  const merged = { ...DEFAULT_SITE_SETTINGS, ...v };
+  merged.profileFieldOptions = mergeProfileFieldOptions(merged.profileFieldOptions);
+  return merged;
+}
+
+export async function getMergedProfileFieldOptions() {
+  const s = await getSiteSettings();
+  return s.profileFieldOptions || mergeProfileFieldOptions(null);
 }
 
 export async function setSiteSettings(actorId, patch) {
@@ -214,6 +223,15 @@ export async function setSiteSettings(actorId, patch) {
       .map((w) => String(w || "").trim().toLowerCase())
       .filter(Boolean)
       .slice(0, 256);
+  }
+
+  if (patch && typeof patch === "object" && patch.profileFieldOptions && typeof patch.profileFieldOptions === "object") {
+    next.profileFieldOptions = mergeProfileFieldOptions({
+      ...mergeProfileFieldOptions(current.profileFieldOptions || null),
+      ...patch.profileFieldOptions,
+    });
+  } else {
+    next.profileFieldOptions = mergeProfileFieldOptions(next.profileFieldOptions || null);
   }
 
   const now = Date.now();
@@ -311,9 +329,27 @@ export async function setUserBadges(actor, targetUserId, badges) {
 
   const prevProfile = typeof target.profile === "object" && target.profile ? target.profile : {};
   const merged = { ...DEFAULT_PROFILE, ...prevProfile, id: target.id, badges: nextBadges };
+  merged.university = CCS_OLFU_UNIVERSITY;
 
   await db.update(schema.ccsUsers).set({ profile: merged }).where(eq(schema.ccsUsers.id, targetUserId));
   await appendAudit(actor.id, "user_badges_update", targetUserId, { count: nextBadges.length });
+
+  return { user: await getUserDetailById(targetUserId) };
+}
+
+export async function setUserStatus(actor, targetUserId, status) {
+  if (!STAFF_ROLES.has(actor.role)) return { error: "forbidden", status: 403 };
+  const db = await getDb();
+  const [target] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, targetUserId)).limit(1);
+  if (!target) return { error: "not_found", status: 404 };
+
+  const s = String(status ?? "").trim().slice(0, 80);
+  const prevProfile = typeof target.profile === "object" && target.profile ? target.profile : {};
+  const merged = { ...DEFAULT_PROFILE, ...prevProfile, id: target.id, status: s || prevProfile.status || DEFAULT_PROFILE.status };
+  merged.university = CCS_OLFU_UNIVERSITY;
+
+  await db.update(schema.ccsUsers).set({ profile: merged }).where(eq(schema.ccsUsers.id, targetUserId));
+  await appendAudit(actor.id, "user_status_update", targetUserId, { length: s.length });
 
   return { user: await getUserDetailById(targetUserId) };
 }
@@ -358,6 +394,7 @@ export async function deleteUserCascade(actor, targetUserId) {
     if (adminCount <= 1) return { error: "last_admin", status: 409, message: "Cannot delete the only remaining admin." };
   }
 
+  await db.delete(schema.ccsAnnouncements).where(eq(schema.ccsAnnouncements.authorId, targetUserId));
   await db.delete(schema.ccsSessions).where(eq(schema.ccsSessions.userId, targetUserId));
   await db.delete(schema.ccsComments).where(eq(schema.ccsComments.userId, targetUserId));
   await db.delete(schema.ccsPosts).where(eq(schema.ccsPosts.userId, targetUserId));
@@ -492,6 +529,99 @@ export async function getPublicLandingBundle() {
     updatedAt: meta ? Number(meta.updatedAt) || null : null,
     counts: raw,
   };
+}
+
+/** ---------- announcements (staff write, public read) ---------- */
+export async function listAnnouncementsPublic() {
+  const db = await getDb();
+  const rows = await db
+    .select()
+    .from(schema.ccsAnnouncements)
+    .orderBy(desc(schema.ccsAnnouncements.pinned), desc(schema.ccsAnnouncements.createdAt));
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    body: r.body,
+    pinned: !!r.pinned,
+    authorId: r.authorId,
+    createdAt: Number(r.createdAt) || 0,
+  }));
+}
+
+export async function createAnnouncementAdmin(actor, body) {
+  if (actor.role !== ROLE_ADMIN) return { error: "forbidden", status: 403 };
+  const title = String(body?.title ?? "").trim().slice(0, 200);
+  const textBody = String(body?.body ?? "").trim().slice(0, 8000);
+  if (!title) return { error: "missing_title", status: 400 };
+  const db = await getDb();
+  const id = `an_${randomUUID()}`;
+  const now = Date.now();
+  await db.insert(schema.ccsAnnouncements).values({
+    id,
+    title,
+    body: textBody,
+    pinned: !!body?.pinned,
+    authorId: actor.id,
+    createdAt: now,
+  });
+  await appendAudit(actor.id, "announcement_create", id, { pinned: !!body?.pinned });
+  return { announcement: { id, title, body: textBody, pinned: !!body?.pinned, authorId: actor.id, createdAt: now } };
+}
+
+export async function deleteAnnouncementAdmin(actor, announcementId) {
+  if (actor.role !== ROLE_ADMIN) return { error: "forbidden", status: 403 };
+  const db = await getDb();
+  await db.delete(schema.ccsAnnouncements).where(eq(schema.ccsAnnouncements.id, announcementId));
+  await appendAudit(actor.id, "announcement_delete", announcementId, {});
+  return { ok: true };
+}
+
+/** ---------- ticketing (moderators + admins) ---------- */
+export async function listTicketsAdmin({ status = "" } = {}) {
+  const db = await getDb();
+  const st = String(status || "").trim();
+  const rows = await (
+    st
+      ? db.select().from(schema.ccsTickets).where(eq(schema.ccsTickets.status, st)).orderBy(desc(schema.ccsTickets.updatedAt))
+      : db.select().from(schema.ccsTickets).orderBy(desc(schema.ccsTickets.updatedAt))
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    userId: r.userId,
+    subject: r.subject,
+    body: r.body,
+    status: r.status,
+    staffReply: r.staffReply,
+    createdAt: Number(r.createdAt) || 0,
+    updatedAt: Number(r.updatedAt) || 0,
+  }));
+}
+
+export async function updateTicketStaff(actor, ticketId, patch = {}) {
+  if (!STAFF_ROLES.has(actor.role)) return { error: "forbidden", status: 403 };
+  const db = await getDb();
+  const [prev] = await db.select().from(schema.ccsTickets).where(eq(schema.ccsTickets.id, ticketId)).limit(1);
+  if (!prev) return { error: "not_found", status: 404 };
+
+  let nextStatus = prev.status || "open";
+  if (typeof patch.status === "string") {
+    const s = patch.status.trim();
+    if (s === "open" || s === "closed") nextStatus = s;
+  }
+
+  let nextReply = typeof prev.staffReply === "string" ? prev.staffReply : "";
+  if (typeof patch.staffReply === "string") nextReply = patch.staffReply.trim().slice(0, 4000);
+
+  const now = Date.now();
+  await db
+    .update(schema.ccsTickets)
+    .set({ status: nextStatus, staffReply: nextReply, updatedAt: now })
+    .where(eq(schema.ccsTickets.id, ticketId));
+
+  await appendAudit(actor.id, "ticket_update", ticketId, { status: nextStatus });
+
+  const [fresh] = await db.select().from(schema.ccsTickets).where(eq(schema.ccsTickets.id, ticketId)).limit(1);
+  return { ticket: fresh };
 }
 
 export async function saveLandingCms(actorId, body) {

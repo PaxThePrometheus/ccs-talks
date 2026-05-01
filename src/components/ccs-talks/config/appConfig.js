@@ -42,6 +42,8 @@ export const APP_CONFIG = {
     landing: { title: "Home" },
     about: { title: "About" },
     forum: { title: "Forum" },
+    announcements: { title: "Announcements" },
+    tickets: { title: "Tickets" },
     profile: { title: "Profile" },
     timeline: { title: "My timeline" },
     activities: { title: "Activities" },
@@ -63,6 +65,7 @@ export const APP_CONFIG = {
       { key: "bookmarks", icon: "🔖", label: "Bookmarks" },
       { key: "friends", icon: "👥", label: "Friends" },
       { key: "subs", icon: "＋", label: "Subscriptions" },
+      { key: "tickets", icon: "🎫", label: "Tickets" },
     ],
     sidebarSecondary: [
       { key: "settings", icon: "⚙️", label: "Settings" },

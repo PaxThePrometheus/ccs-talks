@@ -16,6 +16,8 @@ import { SearchScreen } from "./screens/SearchScreen";
 import { ActivitiesScreen } from "./screens/ActivitiesScreen";
 import { BookmarksScreen } from "./screens/BookmarksScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
+import { AnnouncementsScreen } from "./screens/AnnouncementsScreen";
+import { TicketsScreen } from "./screens/TicketsScreen";
 import { FriendsScreen } from "./screens/FriendsScreen";
 import { SubscriptionsScreen } from "./screens/SubscriptionsScreen";
 import { OnboardingModal } from "./ui/OnboardingModal";
@@ -33,13 +35,26 @@ function CCSTalksAppInner() {
   const isFriends = page === "friends";
   const isSubs = page === "subs";
   const isSettings = page === "settings";
+  const isAnnouncements = page === "announcements";
+  const isTickets = page === "tickets";
   const isLanding = page === "landing" || page === "about";
   const isAuth = page === "login" || page === "register";
   // Forum is the only page that can be browsed without auth (read-only preview).
   // Everything else (profile/bookmarks/friends/etc) requires sign in.
-  const guestAllowed = ["landing", "about", "login", "register", "forum", "search"];
+  const guestAllowed = ["landing", "about", "login", "register", "forum", "search", "announcements", "tickets"];
   const requiresAuth = !isAuthed && !guestAllowed.includes(page);
-  const hasSidebarShell = ["forum", "profile", "search", "activities", "bookmarks", "friends", "subs", "settings"].includes(page);
+  const hasSidebarShell = [
+    "forum",
+    "announcements",
+    "tickets",
+    "profile",
+    "search",
+    "activities",
+    "bookmarks",
+    "friends",
+    "subs",
+    "settings",
+  ].includes(page);
   const isLight = prefs.mode === "light";
 
   useEffect(() => {
@@ -62,9 +77,14 @@ function CCSTalksAppInner() {
         fontSize: prefs.largerText ? 16.5 : 15,
       }}
     >
-      {/* Backgrounds: lava-lamp shader + supporting canvas blobs (off in light) */}
-      {!isLight && <DynamicBlobs intensity={0.55} />}
-      <ThreeBackground active accent={isLight ? "#ff8aa3" : "#ff6080"} light={isLight} />
+      {/* WebGL layer first, canvas blobs on top (same z-index) so the 2D pass stays visible. */}
+      {!isLight && (
+        <>
+          <ThreeBackground active accent={isLight ? "#ff8aa3" : "#ff6080"} light={isLight} />
+          <DynamicBlobs intensity={0.55} />
+        </>
+      )}
+      {isLight && <ThreeBackground active accent={isLight ? "#ff8aa3" : "#ff6080"} light={isLight} />}
       {isLight && (
         <div
           aria-hidden="true"
@@ -106,6 +126,8 @@ function CCSTalksAppInner() {
               onMobileClose={() => setSidebarOpen(false)}
             />
             {isForum && <ForumScreen readOnly={!isAuthed} onSignInPrompt={() => setPage("login")} />}
+            {isAnnouncements && <AnnouncementsScreen />}
+            {isTickets && <TicketsScreen onNeedSignIn={() => setPage("login")} />}
             {isProfile && isAuthed && <ProfileScreen />}
             {isSearch && <SearchScreen />}
             {isActivities && isAuthed && <ActivitiesScreen />}

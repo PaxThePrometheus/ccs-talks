@@ -8,6 +8,7 @@ import {
   setUserBadges,
   setUserBanned,
   setUserRole,
+  setUserStatus,
 } from "@/lib/ccs/admin";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +54,12 @@ export async function PATCH(request, { params }) {
 
   if (Array.isArray(body.badges)) {
     const out = await setUserBadges(gate.row, userId, body.badges);
+    if (out?.error) return NextResponse.json({ error: out.message || out.error }, { status: out.status || 400 });
+    return NextResponse.json(out);
+  }
+
+  if (typeof body.status === "string") {
+    const out = await setUserStatus(gate.row, userId, body.status);
     if (out?.error) return NextResponse.json({ error: out.message || out.error }, { status: out.status || 400 });
     return NextResponse.json(out);
   }

@@ -81,7 +81,7 @@ export function AuthScreen({ mode, setPage }) {
     if (!isLogin) {
       if (!name.trim()) return "Please enter your full name.";
       const hh = handle.trim().replace(/[^\w.]/g, "_").slice(0, 32);
-      if (hh && handleStatus === "taken") return "That handle is already taken.";
+      if (hh && handleStatus === "taken") return "That username is already taken.";
       if (password.length < 8) return "Password should be at least 8 characters.";
       if (password !== confirm) return "Passwords don't match.";
       if (!agree) return "Please agree to the Community Guidelines.";
@@ -192,7 +192,7 @@ export function AuthScreen({ mode, setPage }) {
           )}
 
           {!isLogin && (
-            <Field label="Username handle" tokens={tokens}>
+            <Field label="Username" tokens={tokens}>
               <input
                 value={handle}
                 onChange={(e) => setHandle(e.target.value)}
@@ -203,7 +203,7 @@ export function AuthScreen({ mode, setPage }) {
               <div style={{ marginTop: 4, fontSize: 11, color: tokens.textSubtle }}>
                 {handle.trim()
                   ? handleStatus === "ok"
-                    ? "This handle is available."
+                    ? "This username is available."
                     : handleStatus === "taken"
                       ? "Already taken — tweak it slightly."
                       : "Checking…"

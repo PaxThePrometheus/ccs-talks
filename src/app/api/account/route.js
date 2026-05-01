@@ -21,6 +21,12 @@ export async function PATCH(request) {
 
   const out = await patchAccountBundles(viewer.id, body);
   if (out?.unauthorized) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  if (out?.usernameCooldown) {
+    return NextResponse.json(
+      { error: "You can only change your username once every seven days.", nextAllowedAt: out.nextAllowedAt },
+      { status: 429 }
+    );
+  }
   if (out?.handleTaken) return NextResponse.json({ error: "That handle is already taken." }, { status: 409 });
   if (out?.mediaTooLarge) return NextResponse.json({ error: out.message || "Image too large." }, { status: 413 });
 

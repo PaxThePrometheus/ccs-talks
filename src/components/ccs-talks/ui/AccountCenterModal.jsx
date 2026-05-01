@@ -1,5 +1,6 @@
 "use client";
 
+import { CCS_OLFU_UNIVERSITY } from "@/lib/ccs/profileOptions";
 import { useEffect, useRef, useState } from "react";
 import * as api from "../api/ccsApi";
 import { useAppState } from "../state/AppState";
@@ -23,13 +24,32 @@ function readFileAsDataURL(file) {
 }
 
 export function AccountCenterModal({ open, onCancel }) {
-  const { profile, prefs, updatePrefs, signOut, persistFullProfile, accountEmail } = useAppState();
+  const { profile, prefs, updatePrefs, signOut, persistFullProfile, accountEmail, usernameCooldownUntil } = useAppState();
   const [section, setSection] = useState("account");
   const [draft, setDraft] = useState(profile);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [fieldOptions, setFieldOptions] = useState(null);
   const fileInput = useRef(null);
 
-  useEffect(() => { if (open) setDraft(profile); }, [open, profile]);
+  useEffect(() => {
+    if (open) setDraft(profile);
+  }, [open, profile]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancel = false;
+    void api
+      .getProfileFieldOptions()
+      .then((d) => {
+        if (!cancel && d?.options) setFieldOptions(d.options);
+      })
+      .catch(() => {
+        if (!cancel) setFieldOptions(null);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -37,6 +57,8 @@ export function AccountCenterModal({ open, onCancel }) {
   const persist = async () => {
     await persistFullProfile(draft);
   };
+
+  const cooldownActive = typeof usernameCooldownUntil === "number" && Date.now() < usernameCooldownUntil;
 
   return (
     <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 540, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
@@ -105,7 +127,22 @@ export function AccountCenterModal({ open, onCancel }) {
               <Stack>
                 <Group title="Identity">
                   <Field label="Display name"><input style={inp(280)} value={draft.name} onChange={(e) => set("name", e.target.value)} /></Field>
-                  <Field label="Handle"><input style={inp(280)} value={draft.handle} onChange={(e) => set("handle", e.target.value)} /></Field>
+                  <Field label="Username">
+                    <input
+                      style={{ ...inp(280), opacity: cooldownActive ? 0.55 : 1 }}
+                      disabled={cooldownActive}
+                      value={draft.handle}
+                      onChange={(e) => set("handle", e.target.value)}
+                    />
+                    {cooldownActive ? (
+                      <div style={{ marginTop: 4, fontSize: 11, color: "rgba(255,185,195,0.9)" }}>
+                        Next change allowed after {new Date(usernameCooldownUntil).toLocaleString()}.
+                      </div>
+                    ) : null}
+                  </Field>
+                  <Field label="Status (read-only)">
+                    <input style={{ ...inp(280), opacity: 0.75, cursor: "not-allowed" }} readOnly value={draft.status || ""} />
+                  </Field>
                   <Field label="Bio"><textarea rows={3} style={{ ...inp(420), height: 84 }} value={draft.bio} onChange={(e) => set("bio", e.target.value)} /></Field>
                   <Field label="Avatar (upload)">
                     <input ref={fileInput} type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; if (f.size > 4 * 1024 * 1024) { alert("Image too large (>4MB)"); return; } set("avatarImage", await readFileAsDataURL(f)); }} />
@@ -115,11 +152,15 @@ export function AccountCenterModal({ open, onCancel }) {
                 </Group>
 
                 <Group title="School">
-                  <Field label="University"><input style={inp(280)} value={draft.university} onChange={(e) => set("university", e.target.value)} /></Field>
+                  <Field label="University">
+                    <input style={{ ...inp(380), opacity: 0.8, cursor: "not-allowed" }} readOnly value={CCS_OLFU_UNIVERSITY} />
+                  </Field>
                   <Field label="College"><input style={inp(280)} value={draft.college} onChange={(e) => set("college", e.target.value)} /></Field>
-                  <Field label="Program"><input style={inp(280)} value={draft.program} onChange={(e) => set("program", e.target.value)} /></Field>
-                  <Field label="Year"><input style={inp(160)} value={draft.year} onChange={(e) => set("year", e.target.value)} /></Field>
-                  <Field label="Campus"><input style={inp(180)} value={draft.campus} onChange={(e) => set("campus", e.target.value)} /></Field>
+                  <SchoolSelect label="Program / course" value={draft.program} opts={fieldOptions?.programs} onChange={(v) => set("program", v)} selectStyle={inp(280)} />
+                  <SchoolSelect label="Year" value={draft.year} opts={fieldOptions?.years} onChange={(v) => set("year", v)} selectStyle={inp(160)} />
+                  <SchoolSelect label="Campus" value={draft.campus} opts={fieldOptions?.campuses} onChange={(v) => set("campus", v)} selectStyle={inp(220)} />
+                  <SchoolSelect label="Focus" value={draft.focus} opts={fieldOptions?.focuses} onChange={(v) => set("focus", v)} selectStyle={inp(220)} />
+                  <SchoolSelect label="Org" value={draft.org} opts={fieldOptions?.orgs} onChange={(v) => set("org", v)} selectStyle={inp(280)} />
                 </Group>
 
                 <Group title="Locale">
@@ -255,6 +296,24 @@ export function AccountCenterModal({ open, onCancel }) {
         }}
       />
     </div>
+  );
+}
+
+function SchoolSelect({ label, value, opts, onChange, selectStyle }) {
+  const list = Array.isArray(opts) && opts.length ? opts : [];
+  const cur = typeof value === "string" ? value : "";
+  return (
+    <Field label={label}>
+      <select style={selectStyle} value={cur} onChange={(e) => onChange(e.target.value)}>
+        <option value="">—</option>
+        {cur && !list.includes(cur) ? <option value={cur}>{cur} (saved)</option> : null}
+        {list.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+    </Field>
   );
 }
 

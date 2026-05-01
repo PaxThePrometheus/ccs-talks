@@ -21,6 +21,22 @@ async function jsonFetch(url, opts = {}) {
   return data;
 }
 
+export function getProfileFieldOptions() {
+  return jsonFetch("/api/profile-field-options", { method: "GET" });
+}
+
+export function getAnnouncements() {
+  return jsonFetch("/api/announcements", { method: "GET" });
+}
+
+export function getMyTickets() {
+  return jsonFetch("/api/tickets", { method: "GET" });
+}
+
+export function createTicket(payload) {
+  return jsonFetch("/api/tickets", { method: "POST", body: JSON.stringify(payload ?? {}) });
+}
+
 export function getPosts(query = {}) {
   const qs = new URLSearchParams();
   if (query.tag) qs.set("tag", query.tag);

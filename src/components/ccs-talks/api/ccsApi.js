@@ -85,6 +85,39 @@ export function logoutAccount() {
   return jsonFetch("/api/auth/logout", { method: "POST", body: JSON.stringify({}) });
 }
 
+export async function requestPasswordReset(email) {
+  const res = await fetch("/api/auth/forgot-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: String(email || "").trim().toLowerCase() }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(typeof data.error === "string" ? data.error : "Could not submit reset request");
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+export async function resetPasswordWithToken(token, password) {
+  const res = await fetch("/api/auth/reset-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      token: String(token || "").trim(),
+      password: String(password || ""),
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(typeof data.error === "string" ? data.error : "Could not reset password");
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
 export function createPost({ content, tag, imageUrl }) {
   return jsonFetch("/api/posts", { method: "POST", body: JSON.stringify({ content, tag, imageUrl: imageUrl || "" }) });
 }

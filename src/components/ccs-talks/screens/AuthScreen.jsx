@@ -261,6 +261,26 @@ export function AuthScreen({ mode, setPage }) {
 
           {error && <div style={{ marginTop: 10, color: "#ff7d99", fontSize: 12, fontWeight: 800 }}>{error}</div>}
 
+          {isLogin ? (
+            <p style={{ textAlign: "right", marginTop: 10, marginBottom: 0, fontSize: 12 }}>
+              <button
+                type="button"
+                onClick={() => setPage("forgot-password")}
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  color: tokens.accent,
+                  fontWeight: 800,
+                  fontSize: 12,
+                }}
+              >
+                Forgot password?
+              </button>
+            </p>
+          ) : null}
+
           <button
             onClick={submit}
             disabled={submitting}

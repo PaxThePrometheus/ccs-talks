@@ -87,3 +87,10 @@ export const ccsTickets = pgTable("ccs_tickets", {
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
   updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
 });
+
+export const ccsPasswordResetTokens = pgTable("ccs_password_reset_tokens", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  token: text("token").notNull().unique(),
+  expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
+});

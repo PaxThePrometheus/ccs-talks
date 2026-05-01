@@ -90,5 +90,12 @@ export function ddlFragments() {
     )`,
     `CREATE INDEX IF NOT EXISTS ccs_tickets_user_idx ON ccs_tickets (user_id)`,
     `CREATE INDEX IF NOT EXISTS ccs_tickets_status_idx ON ccs_tickets (status)`,
+    `CREATE TABLE IF NOT EXISTS ccs_password_reset_tokens (
+      id text PRIMARY KEY,
+      user_id text NOT NULL REFERENCES ccs_users(id) ON DELETE CASCADE,
+      token text NOT NULL UNIQUE,
+      expires_at bigint NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS ccs_password_reset_tokens_token_idx ON ccs_password_reset_tokens (token)`,
   ];
 }

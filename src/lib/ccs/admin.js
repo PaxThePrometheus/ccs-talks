@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, count, desc, eq, gte, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, ilike, or, sql } from "drizzle-orm";
 import { DEFAULT_PROFILE } from "@/components/ccs-talks/config/appConfig";
 import {
   CCS_DEFAULT_FRIENDS,
@@ -11,6 +11,7 @@ import { getDb } from "./drizzle-client";
 import { toPublicProfile } from "./publicUser";
 import { formatStatNumber, mergeLandingCms } from "./landingDefaults";
 import { sanitizeBadgeColorsInput } from "./badgeColors";
+import { publicAppBaseUrl } from "./mailer";
 import {
   clampMediaField,
   insertSession,
@@ -525,7 +526,7 @@ export async function adminPinPost(actor, postId, pinned) {
 
 export async function adminEditPost(actor, postId, content) {
   const db = await getDb();
-  const v = String(content || "").slice(0, 2000);
+  const v = String(content || "").slice(0, 16_000);
   await db.update(schema.ccsPosts).set({ content: v }).where(eq(schema.ccsPosts.id, postId));
   await appendAudit(actor.id, "post_edit", postId, { length: v.length });
   return { ok: true };
@@ -540,6 +541,134 @@ export async function adminDeletePost(actor, postId) {
 }
 
 /** ---------- overview ---------- */
+function pickSqlBigint(result, key) {
+  const rows = Array.isArray(result) ? result : result?.rows;
+  const row = rows?.[0];
+  if (!row || typeof row !== "object") return null;
+  const v = row[key] ?? row[key.toUpperCase()];
+  const n = typeof v === "bigint" ? Number(v) : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function maskDatabaseHost(url) {
+  try {
+    const u = new URL(url);
+    const user = u.username ? "••••" : "";
+    const pass = u.password ? ":••••" : "";
+    return `${u.protocol}//${user}${pass}${user || pass ? "@" : ""}${u.hostname}${u.pathname || ""}`;
+  } catch {
+    return "configured";
+  }
+}
+
+async function gatherOpsDiagnostics(db) {
+  const now = Date.now();
+  const mem = process.memoryUsage();
+
+  let databaseSizeBytes = null;
+  let relationStorageBytes = null;
+  try {
+    databaseSizeBytes = pickSqlBigint(
+      await db.execute(sql`SELECT pg_database_size(current_database())::bigint AS b`),
+      "b",
+    );
+  } catch {
+    databaseSizeBytes = null;
+  }
+
+  try {
+    relationStorageBytes = pickSqlBigint(
+      await db.execute(sql`
+        SELECT COALESCE(SUM(pg_total_relation_size(c.oid)), 0)::bigint AS b
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind IN ('r','m')
+      `),
+      "b",
+    );
+  } catch {
+    relationStorageBytes = null;
+  }
+
+  let postsTextBytes = null;
+  let commentsTextBytes = null;
+  try {
+    postsTextBytes = pickSqlBigint(await db.execute(sql.raw(`SELECT COALESCE(SUM(LENGTH(content)), 0)::bigint AS n FROM ccs_posts`)), "n");
+  } catch {
+    postsTextBytes = null;
+  }
+  try {
+    commentsTextBytes = pickSqlBigint(await db.execute(sql.raw(`SELECT COALESCE(SUM(LENGTH(body)), 0)::bigint AS n FROM ccs_comments`)), "n");
+  } catch {
+    commentsTextBytes = null;
+  }
+
+  const [
+    [{ n: sessTotal }],
+    [{ n: sessActive }],
+    [{ n: announcementsN }],
+    [{ n: ticketsN }],
+    [{ n: auditRows }],
+    [{ n: ticketsOpen }],
+  ] = await Promise.all([
+    db.select({ n: count() }).from(schema.ccsSessions),
+    db.select({ n: count() }).from(schema.ccsSessions).where(gt(schema.ccsSessions.expiresAt, now)),
+    db.select({ n: count() }).from(schema.ccsAnnouncements),
+    db.select({ n: count() }).from(schema.ccsTickets),
+    db.select({ n: count() }).from(schema.ccsAuditLog),
+    db.select({ n: count() }).from(schema.ccsTickets).where(eq(schema.ccsTickets.status, "open")),
+  ]);
+
+  const dbUrl = process.env.DATABASE_URL || "";
+
+  let timeZone = "";
+  try {
+    timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch {
+    timeZone = "";
+  }
+
+  return {
+    server: {
+      node: process.version,
+      platform: process.platform,
+      pid: process.pid,
+      uptimeSeconds: Math.floor(process.uptime()),
+      memory: {
+        rss: mem.rss,
+        heapUsed: mem.heapUsed,
+        heapTotal: mem.heapTotal,
+        external: mem.external,
+      },
+      timeZone,
+    },
+    storage: {
+      databaseSizeBytes,
+      relationStorageBytes,
+      postsTextBytes,
+      commentsTextBytes,
+    },
+    database: {
+      hostMasked: dbUrl ? maskDatabaseHost(dbUrl) : "DATABASE_URL not set",
+      activeSessions: Number(sessActive ?? 0),
+      sessionsTotal: Number(sessTotal ?? 0),
+      announcements: Number(announcementsN ?? 0),
+      tickets: Number(ticketsN ?? 0),
+      ticketsOpen: Number(ticketsOpen ?? 0),
+      auditLogRows: Number(auditRows ?? 0),
+    },
+    integrations: {
+      transactionalEmail: !!String(process.env.RESEND_API_KEY || "").trim(),
+      publicAppUrl: !!(publicAppBaseUrl() || process.env.VERCEL_URL),
+      authPepperSet: !!String(process.env.CCS_AUTH_PEPPER || "").trim(),
+      adminInviteEnv: !!String(process.env.CCS_ADMIN_INVITE || "").trim(),
+    },
+    api: {
+      note: "REST handlers under src/app/api/* (Next.js App Router). Metrics are snapshot-only unless you add instrumentation.",
+    },
+  };
+}
+
 export async function getOverview() {
   const db = await getDb();
   const [users, posts, comments, audit] = await Promise.all([
@@ -553,6 +682,13 @@ export async function getOverview() {
   const totalAdmins = users.filter((u) => u.role === ROLE_ADMIN).length;
   const totalMods = users.filter((u) => u.role === ROLE_MODERATOR).length;
   const totalBanned = users.filter((u) => !!u.banned).length;
+
+  let ops = null;
+  try {
+    ops = await gatherOpsDiagnostics(db);
+  } catch {
+    ops = { error: "Could not load ops snapshot." };
+  }
 
   return {
     totals: {
@@ -571,6 +707,7 @@ export async function getOverview() {
       meta: r.meta || {},
       createdAt: Number(r.createdAt) || 0,
     })),
+    ops,
   };
 }
 

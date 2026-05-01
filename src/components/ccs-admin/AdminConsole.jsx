@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CcsMarkdown } from "@/components/ccs-talks/components/CcsMarkdown";
 import { badgeAccentForLabel, badgePillColors } from "@/lib/ccs/badgeColors";
 import { AdminLandingPane } from "./AdminLandingPane";
+import { applyMarkdownInsert, MarkdownToolbarRow } from "./markdownTools";
 import { adminTheme as t, btn, panel, panelHeader, row, tag } from "./adminUi";
 
 const SECTIONS = [
@@ -176,6 +177,43 @@ function Topbar({ title }) {
   );
 }
 
+function formatBytes(n) {
+  if (n == null || !Number.isFinite(Number(n))) return "—";
+  let v = Number(n);
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (v >= 1024 && i < u.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v < 10 && i > 0 ? v.toFixed(1) : Math.round(v)} ${u[i]}`;
+}
+
+function fmtDuration(totalSec) {
+  const s = Math.max(0, Math.floor(Number(totalSec) || 0));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m ${sec}s`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+
+function OpsCard({ title, lines }) {
+  return (
+    <div style={{ borderRadius: 12, border: `1px solid ${t.border}`, padding: "10px 12px", background: "rgba(0,0,0,0.22)" }}>
+      <div style={{ fontWeight: 900, fontSize: 12, letterSpacing: "0.06em", color: t.muted }}>{title}</div>
+      {lines.map((ln, i) => (
+        <div key={i} style={{ marginTop: 6, color: t.text, fontSize: 13 }}>
+          {ln}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** ---------- overview ---------- */
 function OverviewPane({ onError }) {
   const [data, setData] = useState(null);
@@ -190,6 +228,8 @@ function OverviewPane({ onError }) {
 
   if (!data) return <Skeleton />;
 
+  const ops = data.ops && typeof data.ops === "object" && !data.ops.error ? data.ops : null;
+
   return (
     <>
       <div style={statGrid}>
@@ -200,6 +240,76 @@ function OverviewPane({ onError }) {
         <Stat k="Posts" v={data.totals.posts} />
         <Stat k="Comments" v={data.totals.comments} />
       </div>
+
+      {ops ? (
+        <section style={panel}>
+          <header style={panelHeader}>Server &amp; storage (snapshot)</header>
+          <div style={{ padding: "12px 16px 16px", display: "flex", flexDirection: "column", gap: 12, fontSize: 13, color: t.text }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+              <OpsCard title="Runtime" lines={[`Node ${ops.server.node}`, `${ops.server.platform} · pid ${ops.server.pid}`, `Uptime ${fmtDuration(ops.server.uptimeSeconds)}`, `TZ ${ops.server.timeZone || "—"}`]} />
+              <OpsCard
+                title="Memory (process)"
+                lines={[
+                  `RSS ${formatBytes(ops.server.memory.rss)}`,
+                  `Heap used ${formatBytes(ops.server.memory.heapUsed)} / ${formatBytes(ops.server.memory.heapTotal)}`,
+                  `External ${formatBytes(ops.server.memory.external)}`,
+                ]}
+              />
+              <OpsCard
+                title="Postgres"
+                lines={[
+                  `DB size ${formatBytes(ops.storage.databaseSizeBytes)}`,
+                  `Tables (relation total) ${formatBytes(ops.storage.relationStorageBytes)}`,
+                  `Posts text ≈ ${formatBytes(ops.storage.postsTextBytes)}`,
+                  `Comments text ≈ ${formatBytes(ops.storage.commentsTextBytes)}`,
+                ]}
+              />
+              <OpsCard
+                title="Rows &amp; sessions"
+                lines={[
+                  `Sessions (all) ${ops.database.sessionsTotal}`,
+                  `Sessions (unexpired) ${ops.database.activeSessions}`,
+                  `Announcements ${ops.database.announcements}`,
+                  `Tickets ${ops.database.tickets} (${ops.database.ticketsOpen} open)`,
+                  `Audit log rows ${ops.database.auditLogRows}`,
+                ]}
+              />
+            </div>
+            <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 12 }}>
+              <div style={{ fontWeight: 900, color: t.textStrong, marginBottom: 6 }}>Integrations &amp; API</div>
+              <div style={{ color: t.muted, fontSize: 12, lineHeight: 1.55 }}>
+                <div>
+                  DB host: <code style={code}>{ops.database.hostMasked}</code>
+                </div>
+                <div>
+                  Transactional email (Resend):{" "}
+                  <span style={tag(ops.integrations.transactionalEmail ? "good" : "warn")}>{ops.integrations.transactionalEmail ? "configured" : "not set"}</span>{" "}
+                  <code style={code}>RESEND_API_KEY</code>
+                </div>
+                <div>
+                  Public app URL for links:{" "}
+                  <span style={tag(ops.integrations.publicAppUrl ? "good" : "warn")}>{ops.integrations.publicAppUrl ? "ok" : "missing"}</span>{" "}
+                  <code style={code}>CCS_PUBLIC_URL</code> / <code style={code}>NEXT_PUBLIC_APP_URL</code> / Vercel
+                </div>
+                <div>
+                  Auth pepper: <span style={tag(ops.integrations.authPepperSet ? "good" : "warn")}>{ops.integrations.authPepperSet ? "set" : "optional"}</span>{" "}
+                  <code style={code}>CCS_AUTH_PEPPER</code>
+                </div>
+                <div>
+                  Admin invite env: <span style={tag(ops.integrations.adminInviteEnv ? "good" : "neutral")}>{ops.integrations.adminInviteEnv ? "set" : "empty"}</span>{" "}
+                  <code style={code}>CCS_ADMIN_INVITE</code>
+                </div>
+                <div style={{ marginTop: 8 }}>{ops.api.note}</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : data.ops?.error ? (
+        <section style={panel}>
+          <header style={panelHeader}>Server &amp; storage</header>
+          <div style={{ padding: 16, color: t.warn, fontSize: 13 }}>{data.ops.error}</div>
+        </section>
+      ) : null}
 
       <section style={panel}>
         <header style={panelHeader}>Recent admin activity</header>
@@ -571,6 +681,11 @@ function PostsPane({ onError }) {
   const [posts, setPosts] = useState([]);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
+  const [editor, setEditor] = useState(null);
+  const [draftBody, setDraftBody] = useState("");
+  const [postPreview, setPostPreview] = useState(false);
+  const editTaRef = useRef(null);
+  const mdTokToolbar = useMemo(() => ({ accent: t.accent, border: t.border, text: t.text, muted: t.muted, surfaceAlt: t.surfaceAlt }), []);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -591,6 +706,29 @@ function PostsPane({ onError }) {
     return () => clearTimeout(t);
   }, [reload]);
 
+  function openPostEditor(p) {
+    setEditor(p);
+    setDraftBody(typeof p.content === "string" ? p.content : "");
+    setPostPreview(false);
+  }
+
+  function closePostEditor() {
+    setEditor(null);
+    setDraftBody("");
+  }
+
+  function applyPostMd(op) {
+    const ta = editTaRef.current;
+    if (!ta) return;
+    const { next, focusStart, focusEnd } = applyMarkdownInsert(draftBody, ta.selectionStart, ta.selectionEnd, op);
+    setDraftBody(next);
+    requestAnimationFrame(() => {
+      ta.selectionStart = focusStart;
+      ta.selectionEnd = focusEnd;
+      ta.focus();
+    });
+  }
+
   async function pin(id, pinned) {
     try {
       await jsonFetch(`/api/admin/posts/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ pinned }) });
@@ -599,54 +737,134 @@ function PostsPane({ onError }) {
       onError(e);
     }
   }
-  async function edit(p) {
-    const next = window.prompt("Rewrite this post body:", p.content);
-    if (next == null || next === p.content) return;
+
+  async function savePostBody() {
+    if (!editor) return;
     try {
-      await jsonFetch(`/api/admin/posts/${encodeURIComponent(p.id)}`, { method: "PATCH", body: JSON.stringify({ content: next }) });
-      setPosts((xs) => xs.map((x) => (x.id === p.id ? { ...x, content: next } : x)));
+      await jsonFetch(`/api/admin/posts/${encodeURIComponent(editor.id)}`, { method: "PATCH", body: JSON.stringify({ content: draftBody }) });
+      setPosts((xs) => xs.map((x) => (x.id === editor.id ? { ...x, content: draftBody } : x)));
+      closePostEditor();
     } catch (e) {
       onError(e);
     }
   }
+
   async function remove(id) {
     if (!window.confirm("Delete this post and all its comments?")) return;
     try {
       await jsonFetch(`/api/admin/posts/${encodeURIComponent(id)}`, { method: "DELETE" });
       setPosts((xs) => xs.filter((p) => p.id !== id));
+      if (editor?.id === id) closePostEditor();
     } catch (e) {
       onError(e);
     }
   }
 
   return (
-    <section style={panel}>
-      <header style={{ ...panelHeader, gap: 12, flexWrap: "wrap" }}>
-        <span>Posts · {posts.length}</span>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search post body…" style={{ ...inp(260) }} />
-      </header>
-      {loading && <div style={{ padding: 16, color: t.muted, fontSize: 13 }}>Loading…</div>}
-      {!loading && posts.length === 0 && <div style={{ padding: 16, color: t.muted, fontSize: 13 }}>No posts match.</div>}
-      {!loading && posts.map((p) => (
-        <div key={p.id} style={row}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0, flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <span style={tag()}>{p.tag}</span>
-              {p.pinned && <span style={tag("good")}>📌 pinned</span>}
-              <span style={{ color: t.muted, fontSize: 12 }}>by <code style={code}>{p.userId}</code></span>
-              <span style={{ color: t.muted, fontSize: 12 }}>· {new Date(p.createdAt).toLocaleString()}</span>
-              <span style={{ color: t.muted, fontSize: 12 }}>· {p.likedBy.length} likes · {p.commentCount} comments</span>
+    <>
+      <section style={panel}>
+        <header style={{ ...panelHeader, gap: 12, flexWrap: "wrap" }}>
+          <span>Posts · {posts.length}</span>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search post body…" style={{ ...inp(260) }} />
+        </header>
+        {loading && <div style={{ padding: 16, color: t.muted, fontSize: 13 }}>Loading…</div>}
+        {!loading && posts.length === 0 && <div style={{ padding: 16, color: t.muted, fontSize: 13 }}>No posts match.</div>}
+        {!loading && posts.map((p) => (
+          <div key={p.id} style={row}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0, flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={tag()}>{p.tag}</span>
+                {p.pinned && <span style={tag("good")}>📌 pinned</span>}
+                <span style={{ color: t.muted, fontSize: 12 }}>by <code style={code}>{p.userId}</code></span>
+                <span style={{ color: t.muted, fontSize: 12 }}>· {new Date(p.createdAt).toLocaleString()}</span>
+                <span style={{ color: t.muted, fontSize: 12 }}>· {p.likedBy.length} likes · {p.commentCount} comments</span>
+              </div>
+              <div style={{ color: t.text, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.content}</div>
             </div>
-            <div style={{ color: t.text, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.content}</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button type="button" onClick={() => pin(p.id, !p.pinned)} style={btn("ghost")}>{p.pinned ? "Unpin" : "Pin"}</button>
+              <button type="button" onClick={() => openPostEditor(p)} style={btn("ghost")}>Edit body</button>
+              <button type="button" onClick={() => remove(p.id)} style={btn("danger")}>Delete</button>
+            </div>
           </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <button onClick={() => pin(p.id, !p.pinned)} style={btn("ghost")}>{p.pinned ? "Unpin" : "Pin"}</button>
-            <button onClick={() => edit(p)} style={btn("ghost")}>Edit body</button>
-            <button onClick={() => remove(p.id)} style={btn("danger")}>Delete</button>
+        ))}
+      </section>
+
+      {editor ? (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.58)", backdropFilter: "blur(6px)", zIndex: 200, overflow: "auto", padding: 20 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closePostEditor();
+          }}
+          role="presentation"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ccs-admin-post-edit-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 720,
+              margin: "32px auto",
+              borderRadius: 16,
+              border: `1px solid ${t.border}`,
+              background: "rgba(18,0,10,0.96)",
+              boxShadow: "0 28px 80px rgba(0,0,0,0.55)",
+              padding: "1.25rem 1.5rem",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <div id="ccs-admin-post-edit-title" style={{ fontWeight: 950, fontSize: 17, color: t.textStrong }}>Edit post (markdown)</div>
+                <div style={{ fontSize: 12, color: t.muted, marginTop: 4 }}>
+                  <code style={code}>{editor.id}</code> · tag {editor.tag}
+                </div>
+              </div>
+              <button type="button" onClick={() => closePostEditor()} style={btn("ghost")}>
+                ✕
+              </button>
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              <MarkdownToolbarRow tokens={mdTokToolbar} onOp={applyPostMd} />
+              <textarea
+                ref={editTaRef}
+                value={draftBody}
+                onChange={(e) => setDraftBody(e.target.value)}
+                rows={14}
+                style={{
+                  ...inp(620),
+                  width: "100%",
+                  marginTop: 10,
+                  minHeight: 220,
+                  resize: "vertical",
+                  fontFamily: "var(--font-geist-mono, ui-monospace, monospace)",
+                  fontSize: 13,
+                }}
+              />
+            </div>
+            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: t.muted, marginTop: 8 }}>
+              <input type="checkbox" checked={postPreview} onChange={(e) => setPostPreview(e.target.checked)} />
+              Live markdown preview (forum-rendered GFM + https images only)
+            </label>
+            {postPreview ? (
+              <div style={{ marginTop: 10, padding: "12px 14px", borderRadius: 10, border: `1px solid ${t.border}`, background: "rgba(0,0,0,0.28)", fontSize: 13 }}>
+                <CcsMarkdown source={draftBody || "(empty)"} accentColor={t.accent} tokens={ANNOUNCE_MD_TOKENS} />
+              </div>
+            ) : null}
+
+            <div style={{ marginTop: 16, display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button type="button" onClick={() => closePostEditor()} style={btn("ghost")}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => void savePostBody()} style={btn("solid")}>
+                Save changes
+              </button>
+            </div>
           </div>
         </div>
-      ))}
-    </section>
+      ) : null}
+    </>
   );
 }
 
@@ -699,6 +917,10 @@ function AnnouncementsPane({ viewer, onError }) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [pinned, setPinned] = useState(false);
+  const [mdPreview, setMdPreview] = useState(false);
+  const mdTaRef = useRef(null);
+
+  const mdTokToolbar = useMemo(() => ({ accent: t.accent, border: t.border, text: t.text, muted: t.muted, surfaceAlt: t.surfaceAlt }), []);
 
   const reload = useCallback(async () => {
     try {
@@ -737,6 +959,18 @@ function AnnouncementsPane({ viewer, onError }) {
     }
   }
 
+  function applyAnnouncementMd(op) {
+    const ta = mdTaRef.current;
+    if (!ta) return;
+    const { next, focusStart, focusEnd } = applyMarkdownInsert(body, ta.selectionStart, ta.selectionEnd, op);
+    setBody(next);
+    requestAnimationFrame(() => {
+      ta.selectionStart = focusStart;
+      ta.selectionEnd = focusEnd;
+      ta.focus();
+    });
+  }
+
   return (
     <>
       {isAdmin ? (
@@ -744,10 +978,27 @@ function AnnouncementsPane({ viewer, onError }) {
           <header style={panelHeader}>Post announcement</header>
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
             <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" style={inp(520)} />
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Markdown body…" rows={6} style={{ ...inp(520), height: 140, resize: "vertical", fontFamily: "inherit" }} />
+            <MarkdownToolbarRow tokens={mdTokToolbar} dense onOp={applyAnnouncementMd} />
+            <textarea
+              ref={mdTaRef}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder="Markdown body…"
+              rows={7}
+              style={{ ...inp(520), minHeight: 160, resize: "vertical", fontFamily: "var(--font-geist-mono, ui-monospace, monospace)", fontSize: 13 }}
+            />
+            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: t.muted }}>
+              <input type="checkbox" checked={mdPreview} onChange={(e) => setMdPreview(e.target.checked)} />
+              Live markdown preview
+            </label>
+            {mdPreview ? (
+              <div style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`, background: "rgba(0,0,0,0.25)", fontSize: 13 }}>
+                <CcsMarkdown source={body || "(empty)"} accentColor={t.accent} tokens={ANNOUNCE_MD_TOKENS} />
+              </div>
+            ) : null}
             <div style={{ fontSize: 12, color: t.muted, lineHeight: 1.5 }}>
-              Markdown supported: <strong>**bold**</strong>, lists, <code style={code}>code</code>, links, tables. Mention users with{" "}
-              <code style={code}>@handle</code>.
+              Use the toolbar above or write GitHub-flavoured Markdown: **bold**, lists, <code style={code}>```fenced code```</code>, tables, links. Images must use{" "}
+              <code style={code}>https://...</code>. Mentions: <code style={code}>@handle</code>.
             </div>
             <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: t.text }}>
               <input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} />

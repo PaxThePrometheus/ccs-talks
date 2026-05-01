@@ -10,6 +10,8 @@ import { Sidebar } from "./components/Sidebar";
 import { LandingScreen } from "./screens/LandingScreen";
 import { AboutScreen } from "./screens/AboutScreen";
 import { AuthScreen } from "./screens/AuthScreen";
+import { ForgotPasswordScreen } from "./screens/ForgotPasswordScreen";
+import { ResetPasswordScreen } from "./screens/ResetPasswordScreen";
 import { ForumScreen } from "./screens/ForumScreen";
 import { ProfileScreen } from "./screens/ProfileScreen";
 import { SearchScreen } from "./screens/SearchScreen";
@@ -38,10 +40,10 @@ function CCSTalksAppInner() {
   const isAnnouncements = page === "announcements";
   const isTickets = page === "tickets";
   const isLanding = page === "landing" || page === "about";
-  const isAuth = page === "login" || page === "register";
+  const isAuth = page === "login" || page === "register" || page === "forgot-password" || page === "reset-password";
   // Forum is the only page that can be browsed without auth (read-only preview).
   // Everything else (profile/bookmarks/friends/etc) requires sign in.
-  const guestAllowed = ["landing", "about", "login", "register", "forum", "search", "announcements", "tickets"];
+  const guestAllowed = ["landing", "about", "login", "register", "forgot-password", "reset-password", "forum", "search", "announcements", "tickets"];
   const requiresAuth = !isAuthed && !guestAllowed.includes(page);
   const hasSidebarShell = [
     "forum",
@@ -60,6 +62,18 @@ function CCSTalksAppInner() {
   useEffect(() => {
     if (requiresAuth) setPage("login");
   }, [requiresAuth, setPage]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const tok = new URLSearchParams(window.location.search).get("reset");
+      if (tok) setPage("reset-password");
+    } catch {
+      /* ignore */
+    }
+    /* One-shot bootstrap from (?reset=) link; avoids re-routing later when `setPage` identity changes. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -143,6 +157,8 @@ function CCSTalksAppInner() {
             {page === "about" && <AboutScreen />}
             {page === "login" && <AuthScreen mode="login" setPage={setPage} />}
             {page === "register" && <AuthScreen mode="register" setPage={setPage} />}
+            {page === "forgot-password" && <ForgotPasswordScreen setPage={setPage} />}
+            {page === "reset-password" && <ResetPasswordScreen setPage={setPage} />}
           </>
         )}
       </div>

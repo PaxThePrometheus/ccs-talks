@@ -135,9 +135,7 @@ export function AdminConsole({ viewer, inviteRequired }) {
       transform: navOpen ? "translateX(0)" : "translateX(-108%)",
       transition: "transform 0.22s ease-out",
       zIndex: 95,
-      overflowY: "auto",
-      WebkitOverflowScrolling: "touch",
-      paddingBottom: "max(14px, env(safe-area-inset-bottom, 0px))",
+      overflow: "hidden",
       boxShadow: navOpen ? "8px 0 36px rgba(0,0,0,0.50)" : "none",
       boxSizing: "border-box",
     };
@@ -224,19 +222,41 @@ export function AdminConsole({ viewer, inviteRequired }) {
 function Sidebar({ viewer, section, selectSection, signOut, asideStyle }) {
   return (
     <aside id="ccs-admin-drawer-nav" style={asideStyle}>
-      <div style={{ padding: "20px 18px 12px", paddingLeft: "max(18px, env(safe-area-inset-left, 0px))" }}>
+      <div style={{ flexShrink: 0, padding: "20px 18px 12px", paddingLeft: "max(18px, env(safe-area-inset-left, 0px))" }}>
         <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.22em", color: t.muted }}>CCS TALKS</div>
         <div style={{ fontSize: 18, fontWeight: 950, letterSpacing: "-0.4px", color: t.textStrong, marginTop: 2 }}>Admin Console</div>
       </div>
-      <nav style={{ display: "flex", flexDirection: "column", gap: 4, padding: "0 12px", paddingBottom: 8 }}>
+      <nav
+        className="ccs-scroll"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+          display: "flex",
+          flexDirection: "column",
+          gap: 4,
+          padding: "0 12px",
+          paddingBottom: 8,
+        }}
+      >
         {SECTIONS.map((s) => (
           <button key={s.key} type="button" onClick={() => selectSection(s.key)} style={navItem(section === s.key)}>
             <span style={{ width: 18, textAlign: "center" }}>{s.icon}</span> {s.label}
           </button>
         ))}
       </nav>
-      <div style={{ flex: 1 }} />
-      <div style={{ padding: 14, borderTop: `1px solid ${t.border}`, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div
+        style={{
+          flexShrink: 0,
+          padding: 14,
+          paddingBottom: "max(14px, env(safe-area-inset-bottom, 0px))",
+          borderTop: `1px solid ${t.border}`,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+        }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 32, height: 32, borderRadius: 10, background: "linear-gradient(135deg, #ff6080, #9b0028)" }} />
           <div style={{ minWidth: 0 }}>
@@ -2072,10 +2092,14 @@ const asideCol = {
   background: "rgba(15,0,8,0.65)",
   display: "flex",
   flexDirection: "column",
-  alignSelf: "stretch",
+  /** Keep sidebar one viewport tall so main-column length (long audit feeds) doesn't stretch it away from the viewport. */
+  alignSelf: "flex-start",
   position: "sticky",
   top: 0,
-  minHeight: "100vh",
+  height: "100vh",
+  maxHeight: "100dvh",
+  boxSizing: "border-box",
+  overflow: "hidden",
 };
 const mainCol = { minWidth: 0 };
 const topbar = {

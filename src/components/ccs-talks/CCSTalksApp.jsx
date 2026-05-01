@@ -47,7 +47,9 @@ function CCSTalksAppInner() {
   // Forum is the only page that can be browsed without auth (read-only preview).
   // Everything else (profile/bookmarks/friends/etc) requires sign in.
   const guestAllowed = ["landing", "about", "login", "register", "forgot-password", "reset-password", "forum", "search", "announcements", "tickets"];
-  const requiresAuth = !isAuthed && !guestAllowed.includes(page);
+  /** Signed-out users aren't forced to login on /profile route; peek flow uses `profileVisitUserId`. */
+  const guestOnProfileRoute = !isAuthed && page === "profile";
+  const requiresAuth = !isAuthed && !guestAllowed.includes(page) && !guestOnProfileRoute;
   const hasSidebarShell = [
     "forum",
     "announcements",

@@ -1,53 +1,21 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/ccsApi";
+import {
+  CCS_DEFAULT_FRIENDS,
+  CCS_DEFAULT_PREFS,
+  CCS_DEFAULT_SUBS,
+  normalizeActivities,
+  normalizeFriends,
+  normalizePrefs,
+  normalizeSubs,
+} from "@/lib/ccs/accountDefaults";
 import { DEFAULT_PROFILE, MOCK_POSTS, MOCK_USERS } from "../config/appConfig";
 import { useLocalStorageState } from "./useLocalStorageState";
 import { getThemeTokens } from "../theme";
 
 const AppStateContext = createContext(null);
-
-const DEFAULT_FRIENDS = {
-  // friend ids referencing MOCK_USERS keys
-  friends: ["u_renz", "u_maica", "u_tricia"],
-  pending: ["u_josh"], // incoming friend requests
-  outgoing: ["u_miguel"],
-};
-
-const DEFAULT_SUBS = {
-  // tags subscribed to (with notify flag)
-  tags: [
-    { tag: "Academics", notify: true },
-    { tag: "Events", notify: true },
-    { tag: "Tech", notify: false },
-  ],
-  // user ids the current profile follows
-  follows: ["u_renz", "u_tricia"],
-};
-
-const DEFAULT_PREFS = {
-  mode: "dark", // "dark" | "light"
-  compact: false,
-  language: "English",
-  showSensitive: false,
-  defaultPostTag: "General",
-  feedSort: "latest", // latest | top | mixed
-  hideReportedAfter: 5,
-  // notifications
-  notifyMentions: true,
-  notifyReplies: true,
-  notifyFriendRequests: true,
-  notifyDigest: false,
-  notifySubscriptions: true,
-  // privacy
-  profileVisibility: "Public", // Public | Friends | Private
-  allowDMs: "Friends", // Everyone | Friends | None
-  showOnlineStatus: true,
-  // accessibility
-  reduceMotion: false,
-  largerText: false,
-};
 
 export function AppStateProvider({ children }) {
   const [profile, setProfile] = useLocalStorageState("ccs.profile.v1", DEFAULT_PROFILE);
@@ -56,12 +24,57 @@ export function AppStateProvider({ children }) {
   const [posts, setPosts] = useLocalStorageState("ccs.posts.v1", MOCK_POSTS);
   const [commentsByPostId, setCommentsByPostId] = useLocalStorageState("ccs.comments.v1", {});
   const [activities, setActivities] = useLocalStorageState("ccs.activities.v1", []);
-  const [friends, setFriends] = useLocalStorageState("ccs.friends.v1", DEFAULT_FRIENDS);
-  const [subs, setSubs] = useLocalStorageState("ccs.subs.v1", DEFAULT_SUBS);
-  const [prefs, setPrefs] = useLocalStorageState("ccs.prefs.v1", DEFAULT_PREFS);
+  const [friends, setFriends] = useLocalStorageState("ccs.friends.v1", CCS_DEFAULT_FRIENDS);
+  const [subs, setSubs] = useLocalStorageState("ccs.subs.v1", CCS_DEFAULT_SUBS);
+  const [prefs, setPrefs] = useLocalStorageState("ccs.prefs.v1", CCS_DEFAULT_PREFS);
   const [isAuthed, setIsAuthed] = useLocalStorageState("ccs.authed.v1", false);
   const [reports, setReports] = useLocalStorageState("ccs.reports.v1", []);
   const [bannedUserIds, setBannedUserIds] = useLocalStorageState("ccs.banned.v1", []);
+  /** Server-truth role for the current viewer; defaults to "student" until /api/auth/me responds. */
+  const [role, setRole] = useState("student");
+
+  /** Skip first debounced PATCH after we just applied server snapshot (prevents PATCH loop). */
+  const lastSyncedExtrasRef = useRef("");
+
+  const hydrateAccountFromServer = useCallback(
+    (me) => {
+      if (!me?.profile) return;
+      setIsAuthed(true);
+      setProfile((p) => ({ ...DEFAULT_PROFILE, ...p, ...me.profile }));
+      setPrefs(normalizePrefs(me.prefs));
+      setFriends(normalizeFriends(me.friends));
+      setSubs(normalizeSubs(me.subs));
+      setActivities(normalizeActivities(me.activities));
+      setRole(me.role || "student");
+      lastSyncedExtrasRef.current = JSON.stringify({
+        prefs: normalizePrefs(me.prefs),
+        friends: normalizeFriends(me.friends),
+        subs: normalizeSubs(me.subs),
+        activities: normalizeActivities(me.activities),
+      });
+    },
+    [setProfile, setIsAuthed, setPrefs, setFriends, setSubs, setActivities]
+  );
+
+  const persistFullProfile = useCallback(
+    async (patch) => {
+      let merged = null;
+      setProfile((p) => {
+        merged = { ...DEFAULT_PROFILE, ...p, ...(patch && typeof patch === "object" ? patch : {}) };
+        return merged;
+      });
+      if (!isAuthed || !merged) return;
+      try {
+        const out = await api.patchProfile(merged);
+        if (out?.profile) setProfile((p) => ({ ...DEFAULT_PROFILE, ...p, ...out.profile }));
+      } catch (e) {
+        if (e?.status === 409) window.alert("That handle is already taken.");
+        else if (e?.status === 413) window.alert(e.message || "Image too large to save.");
+        else console.warn("[ccs] persistFullProfile", e);
+      }
+    },
+    [isAuthed, setProfile]
+  );
 
   const refreshFeed = useCallback(async () => {
     try {
@@ -102,6 +115,7 @@ export function AppStateProvider({ children }) {
       /* ignore network errors */
     }
     setIsAuthed(false);
+    setRole("student");
   };
 
   /** Bootstrap server feed / session cookie when running inside Next.js. */
@@ -117,7 +131,8 @@ export function AppStateProvider({ children }) {
         let me = null;
         try {
           me = await api.getMe();
-        } catch {
+        } catch (e) {
+          if (e?.status === 401) setIsAuthed(false);
           me = null;
         }
 
@@ -126,9 +141,7 @@ export function AppStateProvider({ children }) {
         if (Array.isArray(feed.posts)) setPosts(feed.posts);
         if (feed.users && typeof feed.users === "object") setFeedUsersById((prev) => ({ ...prev, ...feed.users }));
 
-        if (me?.profile) {
-          applySessionProfile({ profile: me.profile });
-        }
+        if (me?.profile) hydrateAccountFromServer(me);
       } catch {
         // Offline / SSR mismatch — defaults + local cache stay authoritative.
       }
@@ -139,7 +152,7 @@ export function AppStateProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [setPosts, applySessionProfile]);
+  }, [setPosts, setIsAuthed, hydrateAccountFromServer]);
 
   /** Light presence pings while signed in — other clients can subscribe via `/api/presence`. */
   useEffect(() => {
@@ -153,6 +166,24 @@ export function AppStateProvider({ children }) {
     const id = window.setInterval(tick, 45_000);
     return () => window.clearInterval(id);
   }, [isAuthed]);
+
+  /** When signed in, persist prefs · friends · subs · activities (profile uses persistFullProfile or PATCH /api/profile flows). */
+  useEffect(() => {
+    if (!isAuthed || typeof window === "undefined") return undefined;
+    const snap = JSON.stringify({ prefs, friends, subs, activities });
+    if (snap === lastSyncedExtrasRef.current) return undefined;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        try {
+          await api.patchAccount({ prefs, friends, subs, activities });
+          lastSyncedExtrasRef.current = snap;
+        } catch {
+          /* offline / transient */
+        }
+      })();
+    }, 1000);
+    return () => window.clearTimeout(t);
+  }, [isAuthed, prefs, friends, subs, activities]);
 
   // Apply mode-specific css vars to <body> so any tailwind/utility falls back nicely
   useEffect(() => {
@@ -393,8 +424,12 @@ export function AppStateProvider({ children }) {
       tokens,
       // auth
       isAuthed,
+      role,
+      isStaff: role === "admin" || role === "moderator",
       signIn,
       signOut,
+      hydrateAccountFromServer,
+      persistFullProfile,
       // moderation
       reports,
       resolveReport,
@@ -416,11 +451,14 @@ export function AppStateProvider({ children }) {
       prefs,
       tokens,
       isAuthed,
+      role,
       reports,
       bannedUserIds,
       refreshFeed,
       publishPost,
       loadCommentsFromServer,
+      hydrateAccountFromServer,
+      persistFullProfile,
     ]
   );
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

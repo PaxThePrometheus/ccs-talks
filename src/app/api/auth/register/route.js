@@ -3,6 +3,7 @@ import { sanitizeEmail } from "@/lib/ccs/auth";
 import { attachSessionCookie } from "@/lib/ccs/cookiesHdr";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
 import { registerAccountRow } from "@/lib/ccs/store";
+import { getSiteSettings } from "@/lib/ccs/admin";
 import { toPublicProfile } from "@/lib/ccs/publicUser";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,12 @@ export async function POST(request) {
   }
   if (password.length < 8) {
     return NextResponse.json({ error: "Password should be at least 8 characters." }, { status: 400 });
+  }
+
+  /** Honor site-wide "Registration is open" flag set by an administrator. */
+  const settings = await getSiteSettings();
+  if (settings.registrationOpen === false) {
+    return NextResponse.json({ error: "New account registration is currently closed by an administrator." }, { status: 403 });
   }
 
   try {

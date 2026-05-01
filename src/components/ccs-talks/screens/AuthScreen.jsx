@@ -10,7 +10,7 @@ import { APP_CONFIG } from "../config/appConfig";
 export function AuthScreen({ mode, setPage }) {
   const gsapLoaded = useScript(GSAP_CDN);
   const cardRef = useRef(null);
-  const { tokens, prefs, signIn, refreshFeed } = useAppState();
+  const { tokens, prefs, signIn, refreshFeed, hydrateAccountFromServer } = useAppState();
   const isLight = prefs.mode === "light";
   const isLogin = mode === "login";
 
@@ -74,6 +74,12 @@ export function AuthScreen({ mode, setPage }) {
         signIn({ profile: data.profile });
       }
       await refreshFeed();
+      try {
+        const me = await api.getMe();
+        if (me?.profile) hydrateAccountFromServer(me);
+      } catch {
+        /* keep optimistic sign-in snapshot */
+      }
       setPage("forum");
     } catch (e) {
       setError(e.message || "Could not complete sign-in. Try again.");

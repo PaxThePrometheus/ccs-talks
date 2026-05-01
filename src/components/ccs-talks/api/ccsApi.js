@@ -72,6 +72,11 @@ export function patchProfile(patch) {
   return jsonFetch("/api/profile", { method: "PATCH", body: JSON.stringify(patch) });
 }
 
+/** Persist prefs · friends · subs · activities (and optional nested profile merges via same route). */
+export function patchAccount(payload) {
+  return jsonFetch("/api/account", { method: "PATCH", body: JSON.stringify(payload ?? {}) });
+}
+
 export function postPresence() {
   return jsonFetch("/api/presence", { method: "POST", body: JSON.stringify({}) });
 }

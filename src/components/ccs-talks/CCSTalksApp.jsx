@@ -16,14 +16,12 @@ import { SearchScreen } from "./screens/SearchScreen";
 import { ActivitiesScreen } from "./screens/ActivitiesScreen";
 import { BookmarksScreen } from "./screens/BookmarksScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
-import { AdminScreen } from "./screens/AdminScreen";
 import { FriendsScreen } from "./screens/FriendsScreen";
 import { SubscriptionsScreen } from "./screens/SubscriptionsScreen";
-import { SimpleFeatureScreen } from "./screens/SimpleFeatureScreen";
 import { AppStateProvider, useAppState } from "./state/AppState";
 
 function CCSTalksAppInner() {
-  const { page, setPage, profile, prefs, tokens, isAuthed } = useAppState();
+  const { page, setPage, prefs, tokens, isAuthed } = useAppState();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { isLowPower } = useLowPower();
   const isForum = page === "forum";
@@ -34,15 +32,13 @@ function CCSTalksAppInner() {
   const isFriends = page === "friends";
   const isSubs = page === "subs";
   const isSettings = page === "settings";
-  const isAdmin = page === "admin";
   const isLanding = page === "landing" || page === "about";
   const isAuth = page === "login" || page === "register";
   // Forum is the only page that can be browsed without auth (read-only preview).
   // Everything else (profile/bookmarks/friends/etc) requires sign in.
   const guestAllowed = ["landing", "about", "login", "register", "forum", "search"];
   const requiresAuth = !isAuthed && !guestAllowed.includes(page);
-  const hasSidebarShell = ["forum", "profile", "search", "activities", "bookmarks", "friends", "subs", "settings", "admin"].includes(page);
-  const showAdmin = profile.status === "Moderator" || profile.status === "Admin";
+  const hasSidebarShell = ["forum", "profile", "search", "activities", "bookmarks", "friends", "subs", "settings"].includes(page);
   const isLight = prefs.mode === "light";
 
   useEffect(() => {
@@ -116,8 +112,6 @@ function CCSTalksAppInner() {
             {isFriends && isAuthed && <FriendsScreen />}
             {isSubs && isAuthed && <SubscriptionsScreen />}
             {isSettings && isAuthed && <SettingsScreen />}
-            {isAdmin && showAdmin && isAuthed && <AdminScreen />}
-            {isAdmin && (!showAdmin || !isAuthed) && <SimpleFeatureScreen title="Moderator / Admin" subtitle={isAuthed ? "This panel is available to Moderator/Admin roles (set it in Settings → Experimental → Role override)." : "Sign in to access moderation tools."} />}
           </>
         ) : (
           <>

@@ -16,7 +16,7 @@ function withAlpha(hex, a) {
 }
 
 export function ProfileScreen() {
-  const { profile, setProfile, posts, users, likePost, toggleBookmark, sharePost, reportPost, friends, tokens, prefs, publishPost } = useAppState();
+  const { profile, posts, users, likePost, toggleBookmark, sharePost, reportPost, friends, tokens, prefs, publishPost, persistFullProfile } = useAppState();
   const isLight = prefs.mode === "light";
   const [isEditing, setIsEditing] = useState(false);
   const [editingAvatar, setEditingAvatar] = useState(false);
@@ -357,8 +357,24 @@ export function ProfileScreen() {
         </div>
       </div>
 
-      <ProfileEditModal open={isEditing} profile={profile} onCancel={() => setIsEditing(false)} onSave={(next) => { setProfile(next); setIsEditing(false); }} />
-      <AvatarBannerModal open={editingAvatar} profile={profile} onCancel={() => setEditingAvatar(false)} onSave={(next) => { setProfile(next); setEditingAvatar(false); }} />
+      <ProfileEditModal
+        open={isEditing}
+        profile={profile}
+        onCancel={() => setIsEditing(false)}
+        onSave={async (next) => {
+          await persistFullProfile(next);
+          setIsEditing(false);
+        }}
+      />
+      <AvatarBannerModal
+        open={editingAvatar}
+        profile={profile}
+        onCancel={() => setEditingAvatar(false)}
+        onSave={async (next) => {
+          await persistFullProfile(next);
+          setEditingAvatar(false);
+        }}
+      />
       <AccountCenterModal open={accountOpen} onCancel={() => setAccountOpen(false)} />
       <PostDetailModal open={activePostId != null} postId={activePostId} onClose={() => setActivePostId(null)} />
     </div>

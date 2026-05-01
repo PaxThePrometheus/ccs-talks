@@ -22,7 +22,7 @@ function readFileAsDataURL(file) {
 }
 
 export function AccountCenterModal({ open, onCancel }) {
-  const { profile, setProfile, prefs, updatePrefs, signOut } = useAppState();
+  const { profile, prefs, updatePrefs, signOut, persistFullProfile } = useAppState();
   const [section, setSection] = useState("account");
   const [draft, setDraft] = useState(profile);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
@@ -33,7 +33,9 @@ export function AccountCenterModal({ open, onCancel }) {
   if (!open) return null;
 
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
-  const persist = () => setProfile(draft);
+  const persist = async () => {
+    await persistFullProfile(draft);
+  };
 
   return (
     <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 540, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>

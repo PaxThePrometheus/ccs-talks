@@ -50,7 +50,6 @@ export const APP_CONFIG = {
     friends: { title: "Friends" },
     subs: { title: "Subscriptions" },
     settings: { title: "Settings" },
-    admin: { title: "Moderator / Admin" },
     login: { title: "Sign in" },
     register: { title: "Sign up" },
   },

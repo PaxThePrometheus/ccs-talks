@@ -7,6 +7,32 @@ export const ccsUsers = pgTable("ccs_users", {
   passwordHash: text("password_hash").notNull(),
   profile: jsonb("profile").notNull(),
   bookmarkedPostIds: jsonb("bookmarked_post_ids").notNull(),
+  prefs: jsonb("prefs").notNull(),
+  friendsState: jsonb("friends_state").notNull(),
+  subsState: jsonb("subs_state").notNull(),
+  activities: jsonb("activities").notNull(),
+  /** RBAC: 'student' | 'moderator' | 'admin' */
+  role: text("role").notNull().default("student"),
+  banned: boolean("banned").notNull().default(false),
+  bannedReason: text("banned_reason").notNull().default(""),
+  bannedAt: bigint("banned_at", { mode: "number" }),
+  createdAt: bigint("created_at", { mode: "number" }),
+});
+
+export const ccsAuditLog = pgTable("ccs_audit_log", {
+  id: text("id").primaryKey(),
+  actorId: text("actor_id").notNull(),
+  action: text("action").notNull(),
+  targetId: text("target_id").notNull().default(""),
+  meta: jsonb("meta").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+
+export const ccsSiteSettings = pgTable("ccs_site_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+  updatedBy: text("updated_by").notNull().default(""),
 });
 
 export const ccsSessions = pgTable("ccs_sessions", {

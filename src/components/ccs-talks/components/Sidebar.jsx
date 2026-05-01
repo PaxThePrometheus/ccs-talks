@@ -9,11 +9,10 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 export function Sidebar({ setPage, activeKey = "forum", mobileOpen = false, onMobileClose }) {
   const navItems = APP_CONFIG.nav.sidebarPrimary;
   const bottom = APP_CONFIG.nav.sidebarSecondary;
-  const { prefs, toggleMode, profile, signOut, isAuthed } = useAppState();
+  const { prefs, toggleMode, signOut, isAuthed, isStaff, role } = useAppState();
   const isLight = prefs.mode === "light";
-  // Admin link hides whenever the user isn't actually signed in, even if the
-  // experimental role override is set to Moderator/Admin.
-  const showAdmin = isAuthed && (profile.status === "Moderator" || profile.status === "Admin");
+  /** Show the link only when the server has confirmed the viewer is staff (admin/moderator). */
+  const showAdmin = isAuthed && isStaff;
   const [confirmSignOut, setConfirmSignOut] = useState(false);
 
   const handleNav = (key) => {
@@ -141,28 +140,36 @@ export function Sidebar({ setPage, activeKey = "forum", mobileOpen = false, onMo
           </div>
         ))}
 
-        {/* Admin panel: only when signed in AND role is Moderator/Admin. */}
+        {/* Admin Console: separate sub-app at /admin. Server-truth role gating. */}
         {showAdmin && (
-          <div
-            onClick={() => { setPage("admin"); onMobileClose?.(); }}
+          <a
+            href="/admin"
             style={{
               display: "flex",
               alignItems: "center",
               gap: 12,
               padding: "10px 14px",
               borderRadius: 12,
+              textDecoration: "none",
               cursor: "pointer",
               marginTop: 8,
-              color: isLight ? "rgba(60,0,20,0.65)" : "rgba(240,200,200,0.65)",
-              fontSize: 15,
-              fontWeight: 500,
+              color: isLight ? "rgba(60,0,20,0.78)" : "rgba(240,200,200,0.78)",
+              background: isLight ? "rgba(192,0,42,0.06)" : "rgba(160,0,40,0.18)",
+              border: `1px solid ${isLight ? "rgba(192,0,42,0.18)" : "rgba(255,96,128,0.20)"}`,
+              fontSize: 14,
+              fontWeight: 700,
               transition: "background 0.2s",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = isLight ? "rgba(60,0,20,0.06)" : "rgba(120,0,30,0.3)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            title={`Open the ${role} console (opens /admin)`}
           >
-            <span style={{ fontSize: 16, width: 18, textAlign: "center" }}>🛡</span> Moderator / Admin
-          </div>
+            <span style={{ fontSize: 16, width: 18, textAlign: "center" }}>🛡</span>
+            <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+              <span>Admin Console</span>
+              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: isLight ? "rgba(60,0,20,0.55)" : "rgba(240,200,200,0.55)" }}>
+                role · {role}
+              </span>
+            </span>
+          </a>
         )}
       </div>
 

@@ -7,11 +7,11 @@ import { useAppState } from "../state/AppState";
 /**
  * Settings now ONLY hosts app-experience preferences.
  * Account, Privacy, Notifications, Security, Data have been moved to the
- * Account Center (opened from the Profile page) so personal account
- * settings live next to the user's profile.
+ * Account Center (opened from the Profile page). Operational/admin actions
+ * live in the standalone Admin Console at /admin.
  */
 export function SettingsScreen() {
-  const { profile, setProfile, prefs, updatePrefs, toggleMode, tokens, setPage } = useAppState();
+  const { prefs, updatePrefs, toggleMode, tokens, setPage, isStaff, role } = useAppState();
   const isLight = prefs.mode === "light";
   const [tab, setTab] = useState("display");
 
@@ -45,7 +45,6 @@ export function SettingsScreen() {
             ["display", "Display"],
             ["forum", "Forum"],
             ["accessibility", "Accessibility"],
-            ["experimental", "Experimental"],
           ].map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)} style={pill(tab === k, tokens, isLight)}>{label}</button>
           ))}
@@ -95,19 +94,17 @@ export function SettingsScreen() {
               <Row label="High contrast (preview)" tokens={tokens}><Toggle disabled hint="Coming soon" /></Row>
             </Section>
           )}
-
-          {tab === "experimental" && (
-            <Section title="Experimental" hint="Demo-only switches for testing the prototype — not real production features." tokens={tokens} warning>
-              <Row label="Role override (testing only)" tokens={tokens}>
-                <select style={inp(tokens, 160)} value={profile.status} onChange={(e) => setProfile({ ...profile, status: e.target.value })}>
-                  <option>Student</option><option>Moderator</option><option>Admin</option>
-                </select>
-              </Row>
-              <Row label="Show debug overlay" tokens={tokens}><Toggle disabled hint="Disabled in this build" /></Row>
-              <Row label="Reset onboarding" tokens={tokens}><button style={btn(tokens, "ghost")} onClick={() => alert("Onboarding reset (mock)")}>Reset</button></Row>
-            </Section>
-          )}
         </div>
+
+        {isStaff && (
+          <div style={{ ...panel(tokens, isLight), borderColor: isLight ? "rgba(192,0,42,0.30)" : "rgba(255,96,128,0.30)" }}>
+            <Section title="Operations" hint="You are signed in with elevated privileges." tokens={tokens}>
+              <Row label={`Open Admin Console (role · ${role})`} tokens={tokens}>
+                <a href="/admin" style={{ ...btn(tokens, "solid"), textDecoration: "none" }}>↗ Open /admin</a>
+              </Row>
+            </Section>
+          </div>
+        )}
       </div>
     </div>
   );

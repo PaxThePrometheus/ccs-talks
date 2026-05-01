@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
-import { patchUserProfile, resolveViewerFromSession } from "@/lib/ccs/store";
+import { patchAccountBundles, resolveViewerFromSession } from "@/lib/ccs/store";
 
 export const dynamic = "force-dynamic";
 
@@ -19,10 +19,10 @@ export async function PATCH(request) {
   const viewer = await resolveViewerFromSession(token);
   if (!viewer) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
 
-  const patched = await patchUserProfile(viewer.id, body);
-  if (patched?.unauthorized) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  if (patched?.handleTaken) return NextResponse.json({ error: "That handle is already taken." }, { status: 409 });
-  if (patched?.mediaTooLarge) return NextResponse.json({ error: patched.message || "Image too large." }, { status: 413 });
+  const out = await patchAccountBundles(viewer.id, body);
+  if (out?.unauthorized) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  if (out?.handleTaken) return NextResponse.json({ error: "That handle is already taken." }, { status: 409 });
+  if (out?.mediaTooLarge) return NextResponse.json({ error: out.message || "Image too large." }, { status: 413 });
 
-  return NextResponse.json(patched);
+  return NextResponse.json(out.wire);
 }

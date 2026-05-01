@@ -29,6 +29,12 @@ export async function POST(request) {
     if (result?.fail) {
       return NextResponse.json({ error: "Incorrect email or password." }, { status: 401 });
     }
+    if (result?.banned) {
+      return NextResponse.json(
+        { error: result.reason ? `Account suspended: ${result.reason}` : "This account has been suspended." },
+        { status: 403 }
+      );
+    }
 
     const res = NextResponse.json({ profile: toPublicProfile(result.profile) }, { status: 200 });
     attachSessionCookie(res, result.token, result.expiresAt);

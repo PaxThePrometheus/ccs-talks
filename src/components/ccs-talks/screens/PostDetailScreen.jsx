@@ -36,7 +36,8 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
   const isLight = prefs.mode === "light";
   const [commentText, setCommentText] = useState("");
   const [commentImage, setCommentImage] = useState("");
-  const [replyParentId, setReplyParentId] = useState(null);
+  /** Comment id the user is drafting a reply to (root or nested); composer sits under that comment. */
+  const [replyTargetCommentId, setReplyTargetCommentId] = useState(null);
   const [replyText, setReplyText] = useState("");
   const [replyImage, setReplyImage] = useState("");
   const [editing, setEditing] = useState(false);
@@ -58,6 +59,14 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
     void loadCommentsFromServer(postId);
     return undefined;
   }, [postId, loadCommentsFromServer]);
+
+  const commentById = useMemo(() => {
+    const m = {};
+    for (const row of rawComments) {
+      if (row?.id != null) m[String(row.id)] = row;
+    }
+    return m;
+  }, [rawComments]);
 
   const { roots, repliesByParent } = useMemo(() => {
     const roots = [];
@@ -120,7 +129,7 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
     if (parentId) {
       setReplyText("");
       setReplyImage("");
-      setReplyParentId(null);
+      setReplyTargetCommentId(null);
     } else {
       setCommentText("");
       setCommentImage("");
@@ -142,6 +151,12 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
   const viewerTitleBase = post?.content?.trim().slice(0, 48) || "Post";
 
   const shareForComment = useCallback((cid) => post && shareComment(post.id, cid), [post, shareComment]);
+
+  const toggleReplyTarget = useCallback((commentId) => {
+    const id = String(commentId || "").trim();
+    if (!id) return;
+    setReplyTargetCommentId((prev) => (prev === id ? null : id));
+  }, []);
 
   return (
     <div
@@ -415,47 +430,31 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {roots.map((c) => (
-                <div key={c.id}>
-                  <CommentBlock
-                    c={c}
-                    users={users}
-                    handleDir={handleDir}
-                    visitUserProfile={visitUserProfile}
-                    tokens={tokens}
-                    isLight={isLight}
-                    highlightId={highlightId}
-                    setImageViewer={setImageViewer}
-                    shareForComment={shareForComment}
-                    readOnly={readOnly}
-                    isAuthed={isAuthed}
-                    onReply={() => setReplyParentId((prev) => (prev === c.id ? null : c.id))}
-                    replies={repliesByParent[c.id] || []}
-                  />
-                  {replyParentId === c.id && !readOnly && isAuthed && (
-                    <div style={{ marginTop: 10, marginLeft: 20, paddingLeft: 14, borderLeft: `2px solid ${tokens.borderStrong}` }}>
-                      <FeedComposer
-                        text={replyText}
-                        setText={setReplyText}
-                        selectedTag="General"
-                        setSelectedTag={() => {}}
-                        showTagPicker={false}
-                        postTagOptions={["General"]}
-                        imageUrl={replyImage}
-                        setImageUrl={setReplyImage}
-                        users={users}
-                        disabled={false}
-                        onSubmit={() => submitComment(c.id)}
-                        publishLabel="Post reply"
-                        tokens={tokens}
-                        isLight={isLight}
-                        minRows={1}
-                      />
-                      <button type="button" onClick={() => setReplyParentId(null)} style={{ ...ghostBtn(tokens), marginTop: 8 }}>
-                        Cancel
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <CommentBlock
+                  key={c.id}
+                  c={c}
+                  users={users}
+                  commentById={commentById}
+                  repliesByParent={repliesByParent}
+                  handleDir={handleDir}
+                  visitUserProfile={visitUserProfile}
+                  tokens={tokens}
+                  isLight={isLight}
+                  highlightId={highlightId}
+                  setImageViewer={setImageViewer}
+                  shareForComment={shareForComment}
+                  readOnly={readOnly}
+                  isAuthed={isAuthed}
+                  replyTargetCommentId={replyTargetCommentId}
+                  toggleReplyTarget={toggleReplyTarget}
+                  replyText={replyText}
+                  setReplyText={setReplyText}
+                  replyImage={replyImage}
+                  setReplyImage={setReplyImage}
+                  onSubmitThreadReply={submitComment}
+                  replies={repliesByParent[c.id] || []}
+                  depth={0}
+                />
               ))}
             </div>
           </>
@@ -472,9 +471,17 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
   );
 }
 
+function replyContextSnippet(text) {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  return t.length > 72 ? `${t.slice(0, 72)}…` : t;
+}
+
 function CommentBlock({
   c,
   users,
+  commentById,
+  repliesByParent,
   handleDir,
   visitUserProfile,
   tokens,
@@ -484,19 +491,31 @@ function CommentBlock({
   shareForComment,
   readOnly,
   isAuthed,
-  onReply,
+  replyTargetCommentId,
+  toggleReplyTarget,
+  replyText,
+  setReplyText,
+  replyImage,
+  setReplyImage,
+  onSubmitThreadReply,
   replies,
   depth = 0,
 }) {
   const u = users[c.userId];
   const hi = highlightId === c.id;
+  const parentRow = depth > 0 && c.parentId ? commentById[String(c.parentId)] : null;
+  const parentUser = parentRow ? users[parentRow.userId] : null;
+  const threadMargin = depth ? 20 : 0;
+  const threadPad = depth ? 14 : 0;
+  const showReplyComposer = !readOnly && isAuthed && replyTargetCommentId === c.id;
+
   return (
     <div>
       <div
         id={`comment-${c.id}`}
         style={{
-          marginLeft: depth ? 20 : 0,
-          paddingLeft: depth ? 14 : 0,
+          marginLeft: threadMargin,
+          paddingLeft: threadPad,
           borderLeft: depth ? `2px solid ${tokens.border}` : "none",
           borderRadius: 14,
           border: `1px solid ${tokens.cardBorder}`,
@@ -506,6 +525,49 @@ function CommentBlock({
           boxShadow: hi ? "0 0 0 2px rgba(255,96,128,0.75)" : "none",
         }}
       >
+        {parentRow && (
+          <div
+            style={{
+              marginBottom: 8,
+              padding: "6px 8px",
+              borderRadius: 8,
+              background: tokens.surface,
+              border: `1px solid ${tokens.divider}`,
+              fontSize: 11,
+              lineHeight: 1.35,
+              color: tokens.textMuted,
+            }}
+          >
+            <span style={{ fontWeight: 800, color: tokens.textMuted, letterSpacing: "0.02em" }}>Replying to </span>
+            <button
+              type="button"
+              onClick={() => {
+                const el = typeof document !== "undefined" ? document.getElementById(`comment-${parentRow.id}`) : null;
+                el?.scrollIntoView({ behavior: "smooth", block: "center" });
+              }}
+              style={{
+                margin: 0,
+                padding: 0,
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                font: "inherit",
+                fontWeight: 800,
+                color: tokens.accent || "#ff6080",
+              }}
+            >
+              @{parentUser?.handle ?? "user"}
+            </button>
+            {replyContextSnippet(parentRow.text) ? (
+              <>
+                {" "}
+                <span style={{ opacity: 0.92 }}>
+                  · &ldquo;{replyContextSnippet(parentRow.text)}&rdquo;
+                </span>
+              </>
+            ) : null}
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <div style={{ fontWeight: 850, color: tokens.textStrong }}>{u?.name ?? "Unknown"}</div>
           <UserStatusBadgeRow user={u} tokens={tokens} isLight={isLight} chromed={isLight ? undefined : "modalDark"} dense gap={4} />
@@ -567,9 +629,9 @@ function CommentBlock({
           </div>
         ) : null}
         <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          {!readOnly && isAuthed && depth === 0 && (
-            <button type="button" onClick={onReply} style={actionBtnStyle(tokens)}>
-              Reply
+          {!readOnly && isAuthed && (
+            <button type="button" onClick={() => toggleReplyTarget(c.id)} style={actionBtnStyle(tokens)}>
+              {replyTargetCommentId === c.id ? "Cancel reply" : "Reply"}
             </button>
           )}
           {shareForComment && (
@@ -581,11 +643,44 @@ function CommentBlock({
         </div>
         <SignatureFooter user={u} tokens={tokens} isLight={isLight} compact />
       </div>
-      {replies.map((r) => (
+      {showReplyComposer && (
+        <div
+          style={{
+            marginTop: 10,
+            marginLeft: threadMargin,
+            paddingLeft: threadPad ? threadPad + 4 : 0,
+            borderLeft: depth ? `2px solid ${tokens.borderStrong}` : "none",
+          }}
+        >
+          <FeedComposer
+            text={replyText}
+            setText={setReplyText}
+            selectedTag="General"
+            setSelectedTag={() => {}}
+            showTagPicker={false}
+            postTagOptions={["General"]}
+            imageUrl={replyImage}
+            setImageUrl={setReplyImage}
+            users={users}
+            disabled={false}
+            onSubmit={() => onSubmitThreadReply(c.id)}
+            publishLabel={depth ? "Send reply" : "Post reply"}
+            tokens={tokens}
+            isLight={isLight}
+            minRows={1}
+          />
+          <button type="button" onClick={() => toggleReplyTarget(c.id)} style={{ ...ghostBtn(tokens), marginTop: 8 }}>
+            Cancel
+          </button>
+        </div>
+      )}
+      {(replies || []).map((r) => (
         <div key={r.id} style={{ marginTop: 10 }}>
           <CommentBlock
             c={r}
             users={users}
+            commentById={commentById}
+            repliesByParent={repliesByParent}
             handleDir={handleDir}
             visitUserProfile={visitUserProfile}
             tokens={tokens}
@@ -595,9 +690,15 @@ function CommentBlock({
             shareForComment={shareForComment}
             readOnly={readOnly}
             isAuthed={isAuthed}
-            onReply={() => {}}
-            replies={[]}
-            depth={1}
+            replyTargetCommentId={replyTargetCommentId}
+            toggleReplyTarget={toggleReplyTarget}
+            replyText={replyText}
+            setReplyText={setReplyText}
+            replyImage={replyImage}
+            setReplyImage={setReplyImage}
+            onSubmitThreadReply={onSubmitThreadReply}
+            replies={repliesByParent[r.id] || []}
+            depth={depth + 1}
           />
         </div>
       ))}

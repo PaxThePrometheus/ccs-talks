@@ -1724,7 +1724,7 @@ function SitePane({ viewer, onError }) {
           />
         </div>
 
-        <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${t.border}`, paddingBottom: 4 }}>
+        <div style={row}>
           <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>Badge registry</div>
           <div style={{ color: t.muted, fontSize: 12, marginTop: 4, maxWidth: 760, lineHeight: 1.5 }}>
             Each row is one forum badge label and its accent colour. Matching profile badge text uses the same logic as before (exact, then case-insensitive). Visible on profiles and hover cards after landing data refreshes.
@@ -1737,7 +1737,7 @@ function SitePane({ viewer, onError }) {
           />
         </div>
 
-        <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${t.border}` }}>
+        <div style={row}>
           <div style={{ fontWeight: 800, color: t.textStrong, fontSize: 13 }}>Profile field dropdowns</div>
           <div style={{ color: t.muted, fontSize: 12, marginTop: 4, marginBottom: 12, maxWidth: 760 }}>
             One value per line — used in the forum profile editor (each field stays left-aligned inside this column). Stored in <code style={code}>profileFieldOptions</code>.

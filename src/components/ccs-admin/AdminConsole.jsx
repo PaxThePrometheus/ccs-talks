@@ -1039,7 +1039,7 @@ function PublicRoleBadgeControl({ profile, role, userId, patchUser }) {
   const isElevated = role === "admin" || role === "moderator";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0, maxWidth: 420 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0, width: "100%", maxWidth: 440 }}>
       <span style={{ fontSize: 11, color: t.muted, lineHeight: 1.45 }}>
         {isElevated ? (
           <>
@@ -1056,7 +1056,7 @@ function PublicRoleBadgeControl({ profile, role, userId, patchUser }) {
           const next = raw ? raw : null;
           void patchUser(userId, { profile: { publicRoleBadge: next } });
         }}
-        style={{ ...inp(280), fontSize: 12 }}
+        style={{ width: "100%", boxSizing: "border-box", maxWidth: 440 }}
       >
         <option value="">None</option>
         <option value="teacher">Teacher</option>

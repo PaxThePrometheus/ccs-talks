@@ -8,6 +8,33 @@ const ZOOM_MIN = 0.35;
 const ZOOM_MAX = 4;
 const ZOOM_STEP = 0.25;
 
+const lbl = {
+  fontSize: 9,
+  fontWeight: 800,
+  color: "rgba(255,255,255,0.52)",
+  textTransform: "uppercase",
+  letterSpacing: "0.06em",
+  whiteSpace: "nowrap",
+};
+
+function SliderBlock({ label, valueText, children, narrow }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 5,
+        width: narrow ? "min(100%, 260px)" : 152,
+        minWidth: narrow ? 0 : 152,
+      }}
+    >
+      <span style={lbl}>{label}</span>
+      {children}
+      <span style={{ fontSize: 11, fontWeight: 800, color: "rgba(255,240,240,0.88)", letterSpacing: "-0.02em" }}>{valueText}</span>
+    </div>
+  );
+}
+
 /**
  * Full-screen image viewer: zoom + rotate + share + download.
  * Toolbar on the right (wide) or bottom row (narrow).
@@ -112,6 +139,36 @@ export function ForumImageLightbox({ open, src, onClose, title = "Image" }) {
     flex: narrow ? "1 1 auto" : undefined,
   };
 
+  const zoomSlider = (
+    <SliderBlock label="Zoom" valueText={`${Math.round(scale * 100)}%`} narrow={narrow}>
+      <input
+        className="ccs-forum-lightbox-range"
+        type="range"
+        aria-label="Zoom level"
+        min={ZOOM_MIN}
+        max={ZOOM_MAX}
+        step={0.05}
+        value={scale}
+        onChange={(e) => setScale(Number(e.target.value))}
+      />
+    </SliderBlock>
+  );
+
+  const rotateSlider = (
+    <SliderBlock label="Rotate" valueText={`${rotation}°`} narrow={narrow}>
+      <input
+        className="ccs-forum-lightbox-range"
+        type="range"
+        aria-label="Rotation angle"
+        min={0}
+        max={359}
+        step={1}
+        value={rotation}
+        onChange={(e) => setRotation(Number(e.target.value))}
+      />
+    </SliderBlock>
+  );
+
   const toolbar = (
     <div
       style={{
@@ -119,7 +176,8 @@ export function ForumImageLightbox({ open, src, onClose, title = "Image" }) {
         flexDirection: narrow ? "row" : "column",
         flexWrap: narrow ? "wrap" : "nowrap",
         justifyContent: narrow ? "center" : "flex-start",
-        gap: narrow ? 8 : 10,
+        alignContent: narrow ? "center" : undefined,
+        gap: narrow ? 10 : 12,
         padding: narrow ? "12px 10px calc(12px + env(safe-area-inset-bottom, 0px))" : "18px 12px",
         borderLeft: narrow ? "none" : "1px solid rgba(255,255,255,0.10)",
         borderTop: narrow ? "1px solid rgba(255,255,255,0.10)" : "none",
@@ -128,30 +186,67 @@ export function ForumImageLightbox({ open, src, onClose, title = "Image" }) {
         alignItems: narrow ? "stretch" : "center",
       }}
     >
-      <button type="button" onClick={zoomIn} style={toolbarBtn} title="Zoom in">
-        <span style={{ fontSize: 20, fontWeight: 900, lineHeight: 1 }}>+</span>
-        Zoom
-      </button>
-      <button type="button" onClick={zoomOut} style={toolbarBtn} title="Zoom out">
-        <span style={{ fontSize: 20, fontWeight: 900, lineHeight: 1 }}>−</span>
-        Out
-      </button>
-      <button type="button" onClick={zoomReset} style={toolbarBtn} title="Reset zoom">
-        <span style={{ fontSize: 13, fontWeight: 900 }}>1:1</span>
-        Reset
-      </button>
-      <button type="button" onClick={rotateCW} style={toolbarBtn} title="Rotate 90° clockwise">
-        <span style={{ fontSize: 18 }}>↻</span>
-        Turn
-      </button>
-      <button type="button" onClick={() => void handleShare()} style={toolbarBtn} title="Share">
-        <Icon name="share" size={18} />
-        Share
-      </button>
-      <button type="button" onClick={handleDownload} style={toolbarBtn} title="Download">
-        <span style={{ fontSize: 17 }}>⤓</span>
-        Save
-      </button>
+      <div style={{ display: "flex", flexDirection: narrow ? "row" : "column", gap: narrow ? 8 : 10, flexWrap: narrow ? "wrap" : "nowrap", justifyContent: "center" }}>
+        <button type="button" onClick={zoomIn} style={toolbarBtn} title="Zoom in">
+          <span style={{ fontSize: 20, fontWeight: 900, lineHeight: 1 }}>+</span>
+          Zoom
+        </button>
+        <button type="button" onClick={zoomOut} style={toolbarBtn} title="Zoom out">
+          <span style={{ fontSize: 20, fontWeight: 900, lineHeight: 1 }}>−</span>
+          Out
+        </button>
+        <button type="button" onClick={zoomReset} style={toolbarBtn} title="Reset zoom to 100%">
+          <span style={{ fontSize: 13, fontWeight: 900 }}>1:1</span>
+          Reset
+        </button>
+      </div>
+
+      {narrow ? (
+        <div style={{ flex: "1 1 100%", width: "100%", display: "flex", flexDirection: "column", gap: 12, paddingTop: 4 }}>
+          {zoomSlider}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+            <button type="button" onClick={rotateCW} style={toolbarBtn} title="Rotate 90° clockwise">
+              <span style={{ fontSize: 18 }}>↻</span>
+              90°
+            </button>
+            <button
+              type="button"
+              onClick={() => setRotation(0)}
+              style={toolbarBtn}
+              title="Reset rotation to 0°"
+            >
+              <span style={{ fontSize: 13, fontWeight: 900 }}>0°</span>
+              Align
+            </button>
+            <div style={{ flex: "1 1 200px", minWidth: 0 }}>{rotateSlider}</div>
+          </div>
+        </div>
+      ) : (
+        <>
+          {zoomSlider}
+          <div style={{ width: "100%", height: 1, maxWidth: 148, background: "rgba(255,255,255,0.08)", margin: "2px 0" }} aria-hidden />
+          <button type="button" onClick={rotateCW} style={toolbarBtn} title="Rotate 90° clockwise">
+            <span style={{ fontSize: 18 }}>↻</span>
+            90°
+          </button>
+          {rotateSlider}
+          <button type="button" onClick={() => setRotation(0)} style={toolbarBtn} title="Reset rotation to 0°">
+            <span style={{ fontSize: 13, fontWeight: 900 }}>0°</span>
+            Align
+          </button>
+        </>
+      )}
+
+      <div style={{ display: "flex", flexDirection: narrow ? "row" : "column", gap: narrow ? 8 : 10, flexWrap: narrow ? "wrap" : "nowrap", justifyContent: "center" }}>
+        <button type="button" onClick={() => void handleShare()} style={toolbarBtn} title="Share">
+          <Icon name="share" size={18} />
+          Share
+        </button>
+        <button type="button" onClick={handleDownload} style={toolbarBtn} title="Download">
+          <span style={{ fontSize: 17 }}>⤓</span>
+          Save
+        </button>
+      </div>
     </div>
   );
 
@@ -240,7 +335,6 @@ export function ForumImageLightbox({ open, src, onClose, title = "Image" }) {
               height: "auto",
               transform: `scale(${scale}) rotate(${rotation}deg)`,
               transformOrigin: "center center",
-              transition: "transform 0.12s ease-out",
               borderRadius: 8,
               border: "1px solid rgba(255,255,255,0.08)",
             }}

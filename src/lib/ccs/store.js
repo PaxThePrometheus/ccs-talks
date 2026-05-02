@@ -25,7 +25,7 @@ import {
   MAX_POST_COMMENT_IMAGE_DATA_URL_CHARS,
   MAX_PROFILE_MEDIA_DATA_URL_CHARS,
 } from "./imageUploadLimits";
-import { CCS_POST_BODY_MAX_CHARS } from "./postContentLimits";
+import { CCS_COMMENT_BODY_MAX_CHARS, CCS_POST_BODY_MAX_CHARS } from "./postContentLimits";
 import * as schema from "./schema";
 
 const PRESENCE_WINDOW_MS = 120_000;

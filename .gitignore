@@ -42,3 +42,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local web development coursework and static debug copies
+/ccs-talks.zip
+/ccs-talks/
+/static-ccs-talks/
+
+# Generated standalone browser fixtures and screenshots
+.browser-artifacts/
+/tests/staff-fixture-*.mjs

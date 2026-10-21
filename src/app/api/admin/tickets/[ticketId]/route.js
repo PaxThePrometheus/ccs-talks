@@ -1,3 +1,4 @@
+import { staffRoute } from "@/lib/ccs/staffRoute";
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
@@ -5,10 +6,10 @@ import { requireStaff, updateTicketStaff } from "@/lib/ccs/admin";
 
 export const dynamic = "force-dynamic";
 
-export async function PATCH(request, { params }) {
+async function PATCHHandler(request, { params }) {
   await ensureReady();
   const token = await readSessionTokenFromCookies();
-  const gate = await requireStaff(token);
+  const gate = await requireStaff(token, { recentAuth: true });
   if (gate.error) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   let body = {};
@@ -23,3 +24,5 @@ export async function PATCH(request, { params }) {
   if (out?.error) return NextResponse.json({ error: out.error }, { status: out.status || 400 });
   return NextResponse.json(out);
 }
+
+export const PATCH = staffRoute(PATCHHandler);

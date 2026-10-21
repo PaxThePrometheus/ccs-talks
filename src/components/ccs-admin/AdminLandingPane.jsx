@@ -1,123 +1,377 @@
 "use client";
-
+import { useCallback, useEffect, useRef, useState } from "react";
 import { defaultLandingCms } from "@/lib/ccs/landingDefaults";
-import { useCallback, useEffect, useState } from "react";
-import { adminTheme as tm, btn, panel, panelHeader, tag } from "./adminUi";
+import { useAdminDraft } from "./useAdminDraft";
+import { jsonFetch } from "./adminFetch";
+const label = (value) =>
+  value
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/^./, (letter) => letter.toUpperCase());
 
-async function jsonFetch(url, opts = {}) {
-  const res = await fetch(url, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
-    ...opts,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = new Error(data?.error || `Request failed (${res.status})`);
-    err.status = res.status;
-    throw err;
-  }
-  return data;
+function CmsField({ name, value, template, onChange, disabled }) {
+  if (typeof template === "string")
+    return (
+      <label className="admin-field">
+        {label(name)}
+        <textarea
+          aria-label={label(name)}
+          rows={value?.length > 100 ? 3 : 1}
+          maxLength={4096}
+          disabled={disabled}
+          value={value ?? ""}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </label>
+    );
+  if (typeof template === "number")
+    return (
+      <label className="admin-field">
+        {label(name)}
+        <input
+          type="number"
+          disabled={disabled}
+          value={value ?? 0}
+          onChange={(event) => onChange(Number(event.target.value))}
+        />
+      </label>
+    );
+  if (Array.isArray(template))
+    return (
+      <fieldset className="admin-cms-group">
+        <legend>{label(name)}</legend>
+        <div className="admin-cms-array">
+          {(value || []).map((item, index) => (
+            <article key={index}>
+              <CmsField
+                name={`${label(name)} ${index + 1}`}
+                value={item}
+                template={template[0] ?? ""}
+                disabled={disabled}
+                onChange={(next) =>
+                  onChange(value.map((prev, i) => (i === index ? next : prev)))
+                }
+              />
+              <button
+                className="inspector-button quiet"
+                disabled={disabled}
+                onClick={() => onChange(value.filter((_, i) => i !== index))}
+              >
+                Remove item {index + 1}
+              </button>
+            </article>
+          ))}
+        </div>
+        <button
+          className="inspector-button"
+          disabled={disabled || (value?.length || 0) >= 64}
+          onClick={() =>
+            onChange([...(value || []), structuredClone(template[0] ?? "")])
+          }
+        >
+          Add {label(name).toLowerCase()} item
+        </button>
+      </fieldset>
+    );
+  return (
+    <fieldset className="admin-cms-group">
+      <legend>{label(name)}</legend>
+      {Object.entries(template).map(([key, example]) => (
+        <CmsField
+          key={key}
+          name={key}
+          value={value?.[key] ?? example}
+          template={example}
+          disabled={disabled}
+          onChange={(next) => onChange({ ...value, [key]: next })}
+        />
+      ))}
+    </fieldset>
+  );
 }
-
-/** Admin-only CMS for `/` landing + forum side rails (`forumRail`). */
 export function AdminLandingPane({ onError }) {
-  const [text, setText] = useState("");
-  const [counts, setCounts] = useState(null);
-  const [loaded, setLoaded] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [baseline, setBaseline] = useState(null);
+  const [version, setVersion] = useState(0);
+  const [revisions, setRevisions] = useState([]);
+  const [mode, setMode] = useState("fields");
+  const [json, setJson] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-
-  const load = useCallback(async () => {
-    const bundle = await jsonFetch("/api/admin/landing");
-    setText(JSON.stringify(bundle.cms, null, 2));
-    setCounts(bundle.counts || null);
-    setLoaded(true);
+  const lock = useRef(false);
+  const load = useCallback(async (signal) => {
+    const bundle = await jsonFetch("/api/admin/landing", { signal });
+    if (signal?.aborted) return;
+    setDraft(bundle.cms);
+    setBaseline(bundle.cms);
+    setJson(JSON.stringify(bundle.cms, null, 2));
+    setVersion(bundle.version || 0);
+    setRevisions(bundle.revisions || []);
+    setError("");
   }, []);
-
   useEffect(() => {
-    void load().catch(onError);
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () =>
+        load(controller.signal).catch((error) => {
+          if (!controller.signal.aborted) {
+            setError(error.message);
+            onError(error);
+          }
+        }),
+      0,
+    );
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [load, onError]);
-
-  async function save() {
-    let parsed = null;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      setMessage("Invalid JSON.");
+  const dirty =
+    draft &&
+    (mode === "json"
+      ? json !== JSON.stringify(baseline, null, 2)
+      : JSON.stringify(draft) !== JSON.stringify(baseline));
+  useAdminDraft(dirty);
+  async function publish(restoreRevisionId = null) {
+    if (lock.current) return;
+    if (
+      restoreRevisionId &&
+      !window.confirm(
+        "Restore this revision? The current publication will be retained in history. Unsaved edits will be discarded.",
+      )
+    )
       return;
-    }
-    setSaving(true);
+    let cms = draft;
+    if (!restoreRevisionId && mode === "json")
+      try {
+        cms = JSON.parse(json);
+      } catch {
+        setError("Invalid JSON. Your draft is preserved.");
+        return;
+      }
+    lock.current = true;
+    setPending(true);
+    setError("");
     setMessage("");
     try {
-      const bundle = await jsonFetch("/api/admin/landing", { method: "PATCH", body: JSON.stringify({ cms: parsed }) });
-      setText(JSON.stringify(bundle.cms, null, 2));
-      setCounts(bundle.counts || null);
-      setMessage("Published. The homepage polls every ~12s.");
-    } catch (e) {
-      onError(e);
+      const bundle = await jsonFetch("/api/admin/landing", {
+        method: "PATCH",
+        body: JSON.stringify(
+          restoreRevisionId
+            ? { restoreRevisionId, expectedVersion: version }
+            : { cms, expectedVersion: version },
+        ),
+      });
+      setDraft(bundle.cms);
+      setBaseline(bundle.cms);
+      setJson(JSON.stringify(bundle.cms, null, 2));
+      setVersion(bundle.version);
+      setRevisions(bundle.revisions || []);
+      setMessage(
+        restoreRevisionId ? "Revision restored." : "Landing page published.",
+      );
+    } catch (error) {
+      setError(error.message);
+      onError(error);
     } finally {
-      setSaving(false);
+      lock.current = false;
+      setPending(false);
     }
   }
-
-  function resetDefaults() {
-    setText(JSON.stringify(defaultLandingCms(), null, 2));
-    setMessage("Defaults loaded into editor — Save to publish.");
+  function switchMode(next) {
+    if (mode === "json")
+      try {
+        setDraft(JSON.parse(json));
+      } catch {
+        setError("Fix the JSON before leaving the advanced editor.");
+        return;
+      }
+    else setJson(JSON.stringify(draft, null, 2));
+    setMode(next);
+    setError("");
   }
-
+  if (!draft)
+    return (
+      <div className="inspector-message" role={error ? "alert" : "status"}>
+        {error || "Loading landing content…"}
+        {error && (
+          <button
+            className="inspector-button"
+            onClick={() => load().catch(onError)}
+          >
+            Retry
+          </button>
+        )}
+      </div>
+    );
+  const template = defaultLandingCms();
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <section style={panel}>
-        <header style={panelHeader}>Live counters (computed — not editable here)</header>
-        <div style={{ padding: "14px 16px", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", color: tm.muted, fontSize: 13 }}>
-          {counts ? (
-            <>
-              <span style={tag()}>Members · {counts.members}</span>
-              <span style={tag()}>Threads · {counts.threads}</span>
-              <span style={tag("good")}>Active (24h) · {counts.activeToday}</span>
-            </>
-          ) : (
-            <span style={{ color: tm.muted }}>Load to preview…</span>
-          )}
-          <button type="button" onClick={() => void load().catch(onError)} style={{ ...btn("ghost"), marginLeft: "auto" }}>Reload</button>
-        </div>
-      </section>
-
-      <section style={panel}>
-        <header style={panelHeader}>
-          <span>Landing CMS (JSON)</span>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button type="button" onClick={resetDefaults} style={btn("ghost")}>Load defaults into editor</button>
-            <button type="button" disabled={saving || !loaded} onClick={() => void save()} style={btn("solid")}>{saving ? "Publishing…" : "Publish"}</button>
-          </div>
-        </header>
-        <div style={{ padding: 14 }}>
-          <p style={{ margin: "0 0 10px", color: tm.muted, fontSize: 13, lineHeight: 1.55 }}>
-            Edits persist in Neon (<code style={code}>ccs_site_settings</code> · key <code style={code}>landing</code>). The public homepage and forum rails read this payload; visitors pick up updates on the next poll. Staff badge labels are managed under <strong>Site settings → Badge registry</strong> (not in this JSON). Use <code style={code}>postTagOptions</code> (string array) for composer tag chips. Optional <code style={code}>tagColors</code> maps tag label → hex for feed tag chip accents.
-          </p>
-          {message && <div style={{ marginBottom: 10, color: tm.good, fontSize: 13, fontWeight: 700 }}>{message}</div>}
+    <div className="admin-editor">
+      <div
+        className="inspector-toolbar-tools"
+        role="group"
+        aria-label="CMS editor view"
+      >
+        {[
+          ["fields", "Edit fields"],
+          ["preview", "Preview draft"],
+          ["json", "Advanced JSON"],
+        ].map(([key, text]) => (
+          <button
+            key={key}
+            className="inspector-button"
+            aria-pressed={mode === key}
+            disabled={pending}
+            onClick={() => switchMode(key)}
+          >
+            {text}
+          </button>
+        ))}
+      </div>
+      <p className="inspector-caption">
+        Edits stay in this draft until you publish. Existing publications are
+        retained for rollback. Community counters remain live.
+      </p>
+      {error && (
+        <p className="inspector-alert" role="alert">
+          {error}
+        </p>
+      )}
+      {message && <p role="status">{message}</p>}
+      {mode === "fields" ? (
+        <>
+          {Object.entries(template).map(([key, example]) => (
+            <details key={key} className="admin-cms-section">
+              <summary>{label(key)}</summary>
+              <CmsField
+                name={key}
+                value={draft[key]}
+                template={example}
+                disabled={pending}
+                onChange={(value) =>
+                  setDraft((previous) => ({ ...previous, [key]: value }))
+                }
+              />
+            </details>
+          ))}
+        </>
+      ) : mode === "json" ? (
+        <label className="admin-field">
+          Advanced CMS JSON
           <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
+            aria-label="Advanced CMS JSON"
+            rows={22}
             spellCheck={false}
-            style={{
-              width: "100%",
-              minHeight: 420,
-              boxSizing: "border-box",
-              fontFamily: "var(--font-geist-mono, ui-monospace, monospace)",
-              fontSize: 12,
-              lineHeight: 1.45,
-              borderRadius: 12,
-              border: `1px solid ${tm.border}`,
-              background: "rgba(0,0,0,0.35)",
-              color: tm.text,
-              padding: 12,
-            }}
+            disabled={pending}
+            value={json}
+            onChange={(event) => setJson(event.target.value)}
           />
-        </div>
+        </label>
+      ) : (
+        <section
+          className="inspector-preview admin-cms-preview"
+          aria-label="Landing draft preview"
+        >
+          <p className="inspector-eyebrow">DRAFT PREVIEW</p>
+          <p>{draft.heroEyebrow}</p>
+          <h1>{draft.brandName}</h1>
+          <p>{draft.heroSubtitle}</p>
+          <div>
+            {draft.featureCards?.map((item, index) => (
+              <article key={index}>
+                <h3>{item.t || item.title}</h3>
+                <p>{item.b || item.body}</p>
+              </article>
+            ))}
+          </div>
+          <h2>{draft.communityTitle}</h2>
+          {draft.communityOrgs?.map((item, index) => (
+            <p key={index}>
+              {item.name || item.title} · {item.desc || item.description}
+            </p>
+          ))}
+          <h2>{draft.bottomCta?.title}</h2>
+          <p>{draft.bottomCta?.subtitle}</p>
+          <p className="inspector-caption">
+            Content preview. Public page styling and live counters remain on the
+            website.
+          </p>
+        </section>
+      )}
+      <div className="inspector-actions">
+        <button
+          className="inspector-button primary"
+          disabled={pending || !dirty}
+          onClick={() => publish()}
+        >
+          {pending ? "Publishing…" : "Publish changes"}
+        </button>
+        <button
+          className="inspector-button"
+          disabled={pending || !dirty}
+          onClick={() => {
+            if (window.confirm("Discard draft changes?")) {
+              setDraft(baseline);
+              setJson(JSON.stringify(baseline, null, 2));
+            }
+          }}
+        >
+          Discard changes
+        </button>
+        <button
+          className="inspector-button quiet"
+          disabled={pending}
+          onClick={() => {
+            if (
+              !dirty ||
+              window.confirm("Reload published content and discard this draft?")
+            )
+              load().catch(onError);
+          }}
+        >
+          Reload published
+        </button>
+        <button
+          className="inspector-button quiet"
+          disabled={pending}
+          onClick={() => {
+            if (
+              window.confirm(
+                "Replace this draft with defaults? Publishing remains a separate step.",
+              )
+            ) {
+              const defaults = defaultLandingCms();
+              setDraft(defaults);
+              setJson(JSON.stringify(defaults, null, 2));
+            }
+          }}
+        >
+          Load defaults
+        </button>
+      </div>
+      <section className="admin-editor">
+        <h2 style={{ fontSize: 18 }}>Publication history</h2>
+        {!revisions.length && (
+          <p className="inspector-caption">
+            Previous publications appear here after the first update.
+          </p>
+        )}
+        {revisions.map((revision) => (
+          <div className="inspector-actions" key={revision.id}>
+            <span className="inspector-caption">
+              {new Date(Number(revision.created_at)).toLocaleString()} ·{" "}
+              {revision.actor_id}
+            </span>
+            <button
+              className="inspector-button"
+              disabled={pending}
+              onClick={() => publish(revision.id)}
+            >
+              Restore this revision
+            </button>
+          </div>
+        ))}
       </section>
     </div>
   );
 }
-
-const code = { padding: "1px 5px", borderRadius: 6, border: `1px solid ${tm.border}`, background: "rgba(255,255,255,0.06)", fontFamily: "var(--font-geist-mono, monospace)", fontSize: 11 };

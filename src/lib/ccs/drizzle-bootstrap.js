@@ -1,3 +1,8 @@
+import { integrityRepairMigration } from "./integrityRepairMigration.mjs";
+import { workflowMigration } from "./workflowMigration.mjs";
+import { integrityMigration } from "./integrityMigration.mjs";
+import { staffMigration } from "./staffMigration.mjs";
+
 /**
  * Minimal idempotent DDL for Vercel (no separate migrate step required).
  * Safe to run on every cold start — uses IF NOT EXISTS.
@@ -120,5 +125,9 @@ export function ddlFragments() {
     )`,
     `CREATE INDEX IF NOT EXISTS ccs_friend_requests_to_idx ON ccs_friend_requests (to_user_id)`,
     `CREATE INDEX IF NOT EXISTS ccs_friend_requests_from_idx ON ccs_friend_requests (from_user_id)`,
+    ...staffMigration,
+    ...integrityMigration,
+    ...workflowMigration,
+    ...integrityRepairMigration,
   ];
 }

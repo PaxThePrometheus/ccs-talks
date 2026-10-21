@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import { useState } from "react";
 import { APP_CONFIG } from "../config/appConfig";
@@ -9,7 +10,7 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 export function Sidebar({ setPage, activeKey = "forum", mobileOpen = false, onMobileClose }) {
   const navItems = APP_CONFIG.nav.sidebarPrimary;
   const bottom = APP_CONFIG.nav.sidebarSecondary;
-  const { prefs, toggleMode, signOut, isAuthed, isStaff, role, resetProfileVisit } = useAppState();
+  const { prefs, toggleMode, signOut, isAuthed, isStaff, role } = useAppState();
   const isLight = prefs.mode === "light";
   /** Show the link only when the server has confirmed the viewer is staff (admin/moderator). */
   const showAdmin = isAuthed && isStaff;
@@ -29,7 +30,6 @@ export function Sidebar({ setPage, activeKey = "forum", mobileOpen = false, onMo
       onMobileClose?.();
       return;
     }
-    if (key === "profile") resetProfileVisit();
     setPage(key);
     onMobileClose?.();
   };
@@ -148,7 +148,7 @@ export function Sidebar({ setPage, activeKey = "forum", mobileOpen = false, onMo
 
         {/* Admin Console: separate sub-app at /admin. Server-truth role gating. */}
         {showAdmin && (
-          <a
+          <Link
             href="/admin"
             style={{
               display: "flex",
@@ -175,7 +175,7 @@ export function Sidebar({ setPage, activeKey = "forum", mobileOpen = false, onMo
                 role · {role}
               </span>
             </span>
-          </a>
+          </Link>
         )}
       </div>
 
@@ -193,8 +193,7 @@ export function Sidebar({ setPage, activeKey = "forum", mobileOpen = false, onMo
         onCancel={() => setConfirmSignOut(false)}
         onConfirm={async () => {
           setConfirmSignOut(false);
-          await signOut();
-          setPage("landing");
+          if(await signOut())setPage("landing");
         }}
       />
     </div>

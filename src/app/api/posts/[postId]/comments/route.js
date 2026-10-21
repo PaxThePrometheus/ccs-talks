@@ -1,3 +1,6 @@
+import { objectBody, textField } from "@/lib/ccs/requestValidation.mjs";
+import { enforceGuestRead } from "@/lib/ccs/contentPolicy";
+import { staffRoute } from "@/lib/ccs/staffRoute";
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
@@ -5,17 +8,20 @@ import { addCommentEnvelope, listCommentsEnvelope, resolveViewerFromSession } fr
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request, ctx) {
+async function GETHandler(_request, ctx) {
   await ensureReady();
   const { postId } = await ctx.params;
 
+  const token = await readSessionTokenFromCookies();
+  const viewer=await resolveViewerFromSession(token);
+  await enforceGuestRead(viewer?.id);
   const data = await listCommentsEnvelope(postId);
   if (!data) return NextResponse.json({ error: "Post not found." }, { status: 404 });
 
   return NextResponse.json({ comments: data.mapped, users: data.users });
 }
 
-export async function POST(request, ctx) {
+async function POSTHandler(request, ctx) {
   await ensureReady();
   const { postId } = await ctx.params;
   const token = await readSessionTokenFromCookies();
@@ -27,7 +33,8 @@ export async function POST(request, ctx) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const text = String(body.text || "").trim();
+  objectBody(body,["text","imageUrl","parentId"]);
+  const text = textField(body.text,"Comment",8000,{empty:false});
   const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl : "";
   const parentId = typeof body.parentId === "string" ? body.parentId.trim() : "";
   if (!text) return NextResponse.json({ error: "Comment text is empty." }, { status: 400 });
@@ -49,3 +56,6 @@ export async function POST(request, ctx) {
 
   return NextResponse.json(out, { status: 201 });
 }
+
+export const GET = staffRoute(GETHandler);
+export const POST = staffRoute(POSTHandler);

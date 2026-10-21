@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useAppState } from "../state/AppState";
 import * as api from "../api/ccsApi";
 
@@ -21,20 +21,13 @@ export function OnboardingModal({ open }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  useEffect(() => {
-    if (open) {
-      setStep(0);
-      setErr("");
-    }
-  }, [open]);
-
   if (!open) return null;
 
   const finish = async () => {
     setBusy(true);
     setErr("");
     try {
-      await persistFullProfile(profile);
+      if (!(await persistFullProfile(profile))) throw new Error("Could not save your profile. Please retry.");
       await api.patchAccount({ prefs: { ...prefs, onboardingCompleted: true }, subs });
       updatePrefs({ onboardingCompleted: true });
     } catch (e) {
@@ -53,13 +46,13 @@ export function OnboardingModal({ open }) {
     setErr("");
     setBusy(true);
     try {
-      await persistFullProfile(profile);
-    } catch {
-      /** persistFullProfile warns; still allow onward */
+      if (!(await persistFullProfile(profile))) throw new Error("Could not save your profile. Please retry.");
+      setStep(2);
+    } catch (error) {
+      setErr(error?.message || "Could not save your profile.");
     } finally {
       setBusy(false);
     }
-    setStep(2);
   };
 
   return (

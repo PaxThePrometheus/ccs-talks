@@ -1,16 +1,16 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
-import { bootstrapStatus, requireStaff } from "@/lib/ccs/admin";
-import { AdminConsole } from "@/components/ccs-admin/AdminConsole";
+import { requireStaff } from "@/lib/ccs/admin";
+import { InspectorConsole } from "@/components/ccs-admin/InspectorConsole";
+import { INSPECTOR_SECTIONS } from "@/components/ccs-admin/inspectorModel.mjs";
+import { canAccessSection } from "@/lib/ccs/staffPolicy.mjs";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminHomePage() {
+export default async function AdminHomePage({ searchParams }) {
   await ensureReady();
-
-  const status = await bootstrapStatus();
-  if (status.bootstrap) redirect("/admin/register");
 
   const token = await readSessionTokenFromCookies();
   const gate = await requireStaff(token);
@@ -20,20 +20,24 @@ export default async function AdminHomePage() {
       <main style={shell}>
         <h1 style={h1}>Forbidden</h1>
         <p style={p}>This account does not have staff privileges.</p>
-        <a href="/admin/login" style={link}>Sign in with another account</a>
+        <Link href="/admin/login" style={link}>Sign in with another account</Link>
       </main>
     );
   }
 
+  const query = await searchParams;
+  const section = INSPECTOR_SECTIONS.find((item) => item.key === query?.section && canAccessSection(gate.row.role, item.key))?.key || "overview";
   return (
-    <AdminConsole
+    <InspectorConsole
+      initialFilters={Object.fromEntries(["q","status","role","banned","from","to"].map(key=>[key,typeof query?.[key]==="string" ? query[key] : ""]))}
+      initialSection={section}
+      initialRecordId={typeof query?.record === "string" ? query.record : null}
       viewer={{
         id: gate.row.id,
         email: gate.row.email,
         role: gate.row.role,
         name: gate.row.profile?.name || gate.row.email,
       }}
-      inviteRequired={status.inviteRequired}
     />
   );
 }

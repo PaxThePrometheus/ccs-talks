@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { styles } from "./theme";
 import { StaticBackdrop } from "./components/StaticBackdrop";
 import { ThreeBackground } from "./components/ThreeBackground";
@@ -9,28 +9,28 @@ import { useLowPower } from "./useLowPower";
 import { NavBar } from "./components/NavBar";
 import { Sidebar } from "./components/Sidebar";
 import { LandingScreen } from "./screens/LandingScreen";
-import { AboutScreen } from "./screens/AboutScreen";
-import { AuthScreen } from "./screens/AuthScreen";
-import { ForgotPasswordScreen } from "./screens/ForgotPasswordScreen";
-import { ResetPasswordScreen } from "./screens/ResetPasswordScreen";
-import { ForumScreen } from "./screens/ForumScreen";
-import { ProfileScreen } from "./screens/ProfileScreen";
-import { SearchScreen } from "./screens/SearchScreen";
-import { ActivitiesScreen } from "./screens/ActivitiesScreen";
-import { BookmarksScreen } from "./screens/BookmarksScreen";
-import { SettingsScreen } from "./screens/SettingsScreen";
-import { AnnouncementsScreen } from "./screens/AnnouncementsScreen";
-import { TicketsScreen } from "./screens/TicketsScreen";
-import { FriendsScreen } from "./screens/FriendsScreen";
-import { SubscriptionsScreen } from "./screens/SubscriptionsScreen";
-import { PostDetailScreen } from "./screens/PostDetailScreen";
-import { OnboardingModal } from "./ui/OnboardingModal";
+const AboutScreen = lazy(() => import("./screens/AboutScreen").then(m => ({ default: m.AboutScreen })));
+const AuthScreen = lazy(() => import("./screens/AuthScreen").then(m => ({ default: m.AuthScreen })));
+const ForgotPasswordScreen = lazy(() => import("./screens/ForgotPasswordScreen").then(m => ({ default: m.ForgotPasswordScreen })));
+const ResetPasswordScreen = lazy(() => import("./screens/ResetPasswordScreen").then(m => ({ default: m.ResetPasswordScreen })));
+const ForumScreen = lazy(() => import("./screens/ForumScreen").then(m => ({ default: m.ForumScreen })));
+const ProfileScreen = lazy(() => import("./screens/ProfileScreen").then(m => ({ default: m.ProfileScreen })));
+const SearchScreen = lazy(() => import("./screens/SearchScreen").then(m => ({ default: m.SearchScreen })));
+const ActivitiesScreen = lazy(() => import("./screens/ActivitiesScreen").then(m => ({ default: m.ActivitiesScreen })));
+const BookmarksScreen = lazy(() => import("./screens/BookmarksScreen").then(m => ({ default: m.BookmarksScreen })));
+const SettingsScreen = lazy(() => import("./screens/SettingsScreen").then(m => ({ default: m.SettingsScreen })));
+const AnnouncementsScreen = lazy(() => import("./screens/AnnouncementsScreen").then(m => ({ default: m.AnnouncementsScreen })));
+const TicketsScreen = lazy(() => import("./screens/TicketsScreen").then(m => ({ default: m.TicketsScreen })));
+const FriendsScreen = lazy(() => import("./screens/FriendsScreen").then(m => ({ default: m.FriendsScreen })));
+const SubscriptionsScreen = lazy(() => import("./screens/SubscriptionsScreen").then(m => ({ default: m.SubscriptionsScreen })));
+const PostDetailScreen = lazy(() => import("./screens/PostDetailScreen").then(m => ({ default: m.PostDetailScreen })));
+const OnboardingModal = lazy(() => import("./ui/OnboardingModal").then(m => ({ default: m.OnboardingModal })));
 import { AppStateProvider, useAppState } from "./state/AppState";
 import { TalksRouterSync } from "./routing/TalksRouterSync";
 import { ToastHost } from "./ui/ToastHost";
 
 function CCSTalksAppInner() {
-  const { page, setPage, prefs, tokens, isAuthed, profileVisitUserId, profileNotFoundHandle } = useAppState();
+  const { page, setPage, prefs, tokens, isAuthed, authReady, accountReady, profileVisitUserId, profileNotFoundHandle, profileRouteLoading, profileRouteError, activePostId } = useAppState();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { isLowPower } = useLowPower();
   /** Animated WebGL/canvas backgrounds + maximal glass polish off — keeps layout/colors intact. */
@@ -64,7 +64,7 @@ function CCSTalksAppInner() {
     "tickets",
   ];
   /** Signed-out users aren't forced to login on /profile route; peek flow uses `profileVisitUserId`. */
-  const guestOnProfileRoute = !isAuthed && page === "profile";
+  const guestOnProfileRoute = page === "profile" && !!(profileRouteLoading || profileVisitUserId || profileNotFoundHandle || profileRouteError);
   const requiresAuth = !isAuthed && !guestAllowed.includes(page) && !guestOnProfileRoute;
   const hasSidebarShell = [
     "forum",
@@ -82,25 +82,20 @@ function CCSTalksAppInner() {
   const isLight = prefs.mode === "light";
 
   useEffect(() => {
-    if (requiresAuth) setPage("login");
-  }, [requiresAuth, setPage]);
-
-  useEffect(() => {
-    if (isAuthed || page !== "profile") return;
-    if (profileNotFoundHandle) return;
-    if (!String(profileVisitUserId || "").trim()) setPage("forum");
-  }, [isAuthed, page, profileVisitUserId, profileNotFoundHandle, setPage]);
+    if (authReady && requiresAuth) setPage("login", { replace: true });
+  }, [authReady, requiresAuth, setPage]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       const tok = new URLSearchParams(window.location.search).get("reset");
-      if (tok) setPage("reset-password");
+      if (tok && window.location.pathname !== "/reset-password") {
+        window.history.replaceState(null, "", `/reset-password?reset=${encodeURIComponent(tok)}`);
+      }
     } catch {
       /* ignore */
     }
     /* One-shot bootstrap from (?reset=) link; avoids re-routing later when `setPage` identity changes. */
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -114,6 +109,7 @@ function CCSTalksAppInner() {
   return (
     <div
       className={`ccs-app ccs-efficient ${isLight ? "ccs-light" : "ccs-dark"}${saveGpu ? " ccs-low-power" : ""}`}
+      data-ccs-page={page}
       style={{
         ...styles.root,
         background: tokens.appBg,
@@ -175,27 +171,34 @@ function CCSTalksAppInner() {
               mobileOpen={sidebarOpen}
               onMobileClose={() => setSidebarOpen(false)}
             />
+            <Suspense fallback={<div role="status" style={{ marginLeft: "var(--ccs-shell-left)", padding: "3rem", color: tokens.text }}>Loading…</div>}>
             {isForum && <ForumScreen readOnly={!isAuthed} onSignInPrompt={() => setPage("login")} />}
-            {isPost && <PostDetailScreen readOnly={!isAuthed} onSignInPrompt={() => setPage("login")} />}
+            {isPost && <PostDetailScreen key={activePostId} readOnly={!isAuthed} onSignInPrompt={() => setPage("login")} />}
             {isAnnouncements && <AnnouncementsScreen />}
             {isTickets && <TicketsScreen onNeedSignIn={() => setPage("login")} />}
-            {isProfile && (isAuthed || String(profileVisitUserId || "").trim() || profileNotFoundHandle) && <ProfileScreen />}
+            {isProfile && profileRouteLoading && <div role="status" style={{ marginLeft: "var(--ccs-shell-left)", padding: "3rem" }}>Loading profile…</div>}
+            {isProfile && !profileRouteLoading && profileRouteError && <div role="alert" style={{ marginLeft: "var(--ccs-shell-left)", padding: "3rem" }}>{profileRouteError} <button onClick={() => window.location.reload()}>Reload profile</button></div>}
+            {isProfile && !profileRouteLoading && !profileRouteError && (isAuthed || String(profileVisitUserId || "").trim() || profileNotFoundHandle) && <ProfileScreen key={profileVisitUserId || "self"} />}
+            {requiresAuth && !authReady && <div role="status" style={{ marginLeft: "var(--ccs-shell-left)", padding: "3rem" }}>Checking your session…</div>}
             {isSearch && <SearchScreen />}
             {isActivities && isAuthed && <ActivitiesScreen />}
             {isBookmarks && isAuthed && <BookmarksScreen />}
             {isFriends && isAuthed && <FriendsScreen />}
             {isSubs && isAuthed && <SubscriptionsScreen />}
             {isSettings && isAuthed && <SettingsScreen />}
+            </Suspense>
           </>
         ) : (
           <>
             <NavBar setPage={setPage} showFull={isLanding} />
+            <Suspense fallback={<div role="status" style={{ padding: "6rem 3rem", color: tokens.text }}>Loading…</div>}>
             {page === "landing" && <LandingScreen setPage={setPage} />}
             {page === "about" && <AboutScreen />}
             {page === "login" && <AuthScreen mode="login" setPage={setPage} />}
             {page === "register" && <AuthScreen mode="register" setPage={setPage} />}
             {page === "forgot-password" && <ForgotPasswordScreen setPage={setPage} />}
             {page === "reset-password" && <ResetPasswordScreen setPage={setPage} />}
+            </Suspense>
           </>
         )}
       </div>
@@ -204,7 +207,7 @@ function CCSTalksAppInner() {
           <span style={{ fontStyle: "italic", fontWeight: 800, fontSize: 11, color: "rgba(255,255,255,0.25)", letterSpacing: "1px" }} />
         </div>
       )}
-      <OnboardingModal open={isAuthed && prefs?.onboardingCompleted === false} />
+      {isAuthed && accountReady && prefs?.onboardingCompleted === false && <Suspense fallback={null}><OnboardingModal open /></Suspense>}
     </div>
   );
 }

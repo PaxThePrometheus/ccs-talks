@@ -27,7 +27,10 @@ export function LandingScreen({ setPage }) {
 
   useEffect(() => {
     let alive = true;
+    let pending = false;
     const poll = async () => {
+      if (pending || document.visibilityState === "hidden") return;
+      pending = true;
       try {
         const d = await api.getLanding();
         if (!alive) return;
@@ -36,7 +39,7 @@ export function LandingScreen({ setPage }) {
         setLandingUpdatedAt(typeof d?.updatedAt === "number" ? d.updatedAt : null);
       } catch {
         /* keep CMS defaults already in state */
-      }
+      } finally { pending = false; }
     };
     void poll();
     const id = window.setInterval(() => void poll(), POLL_MS);
@@ -54,18 +57,6 @@ export function LandingScreen({ setPage }) {
         delete window.__ccsScrollToCommunity;
       } catch {}
     };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const t = setTimeout(() => {
-      if (window.gsap) return;
-      const targets = [heroRef.current, subtitleRef.current, ctaRef.current];
-      targets.forEach((el) => {
-        if (el) el.style.opacity = "1";
-      });
-    }, 1500);
-    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
@@ -91,9 +82,9 @@ export function LandingScreen({ setPage }) {
       reveal();
       return;
     }
-    gs.fromTo(a, { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.85, ease: "back.out(1.4)", immediateRender: true });
-    gs.fromTo(b, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.7, delay: 0.18, ease: "back.out(1.2)", immediateRender: true });
-    gs.fromTo(c, { opacity: 0, y: 14, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.65, delay: 0.32, ease: "back.out(1.6)", immediateRender: true });
+    gs.fromTo(a, { y: 8 }, { y: 0, duration: 0.35, ease: "power2.out" });
+    gs.fromTo(b, { y: 6 }, { y: 0, duration: 0.3, ease: "power2.out" });
+    gs.fromTo(c, { y: 4 }, { y: 0, duration: 0.25, ease: "power2.out" });
   }, [gsapLoaded, prefs.reduceMotion, prefs.reduceEffects]);
 
   const brandTitle = cms.brandName || APP_CONFIG.brand.name;
@@ -113,16 +104,16 @@ export function LandingScreen({ setPage }) {
                 lineHeight: 0.95,
                 letterSpacing: "-3px",
                 margin: "10px 0 0",
-                opacity: 0,
+                opacity: 1,
               }}
             >
               {brandTitle}
             </h1>
-            <p ref={subtitleRef} style={{ color: tokens.textMuted, fontSize: 17, marginTop: 18, opacity: 0, maxWidth: 560, lineHeight: 1.6 }}>
+            <p ref={subtitleRef} style={{ color: tokens.textMuted, fontSize: 17, marginTop: 18, opacity: 1, maxWidth: 560, lineHeight: 1.6 }}>
               {cms.heroSubtitle}
             </p>
 
-            <div ref={ctaRef} style={{ marginTop: 26, display: "flex", gap: 10, flexWrap: "wrap", opacity: 0 }}>
+            <div ref={ctaRef} style={{ marginTop: 26, display: "flex", gap: 10, flexWrap: "wrap", opacity: 1 }}>
               {isAuthed ? (
                 <button onClick={() => setPage("forum")} type="button" style={btn(tokens, "solid", "lg")}>
                   Open the forum →

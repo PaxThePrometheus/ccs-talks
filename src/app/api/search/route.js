@@ -1,3 +1,4 @@
+import { staffRoute } from "@/lib/ccs/staffRoute";
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
@@ -5,7 +6,7 @@ import { resolveViewerFromSession, searchForumPostsEnvelope } from "@/lib/ccs/st
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request) {
+async function GETHandler(request) {
   await ensureReady();
   const url = new URL(request.url);
   const q = url.searchParams.get("q") || "";
@@ -20,7 +21,10 @@ export async function GET(request) {
   try {
     const payload = await searchForumPostsEnvelope(viewer?.id ?? null, { q, tag, cursor: cursor || null, limit });
     return NextResponse.json(payload);
-  } catch {
+  } catch (error) {
+    if (error?.status) throw error;
     return NextResponse.json({ error: "Search unavailable.", posts: [], users: {}, nextCursor: null }, { status: 503 });
   }
 }
+
+export const GET = staffRoute(GETHandler);

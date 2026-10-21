@@ -1,3 +1,5 @@
+import { objectBody, textField } from "@/lib/ccs/requestValidation.mjs";
+import { staffRoute } from "@/lib/ccs/staffRoute";
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
@@ -6,7 +8,7 @@ import { createUserPost, fetchPublicFeed, resolveViewerFromSession } from "@/lib
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request) {
+async function GETHandler(request) {
   await ensureReady();
   const url = new URL(request.url);
   const tag = url.searchParams.get("tag");
@@ -19,12 +21,13 @@ export async function GET(request) {
     const viewer = token ? await resolveViewerFromSession(token) : null;
     const payload = await fetchPublicFeed(viewer?.id ?? null, tag, { cursor: cursor || null, limit });
     return NextResponse.json(payload);
-  } catch {
+  } catch (error) {
+    if (error?.status) throw error;
     return NextResponse.json({ error: "Database unavailable.", posts: [], users: {}, nextCursor: null }, { status: 503 });
   }
 }
 
-export async function POST(request) {
+async function POSTHandler(request) {
   await ensureReady();
   const token = await readSessionTokenFromCookies();
 
@@ -35,7 +38,8 @@ export async function POST(request) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const content = String(payload.content || "").trim();
+  objectBody(payload,["content","tag","imageUrl"]);
+  const content = textField(payload.content,"Post",12800,{empty:false});
   const tag = String(payload.tag || "General").trim() || "General";
   const imageUrl = typeof payload.imageUrl === "string" ? payload.imageUrl : "";
   if (!content) return NextResponse.json({ error: "Post content is empty." }, { status: 400 });
@@ -61,7 +65,11 @@ export async function POST(request) {
       return NextResponse.json({ error: "Attached image is too large or invalid." }, { status: 413 });
     }
     return NextResponse.json({ post: created }, { status: 201 });
-  } catch {
+  } catch (error) {
+    if (error?.status) throw error;
     return NextResponse.json({ error: "Could not publish post." }, { status: 503 });
   }
 }
+
+export const GET = staffRoute(GETHandler);
+export const POST = staffRoute(POSTHandler);

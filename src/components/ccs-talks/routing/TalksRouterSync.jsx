@@ -1,127 +1,47 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { useAppState } from "../state/AppState";
-import { buildTalksPathname, normalizeTalksPathname, parseTalksPathname } from "./talksPaths";
+import { parseTalksPathname } from "./talksPaths";
+import { navigateTalks } from "./navigateTalks";
 
-/**
- * Keeps virtual `page` state in sync with real URLs (`/forum`, `/profile/me`, `/login`, …),
- * parallel to `/admin` using the App Router — shareable routes without hash-only SPA links.
- */
+/** The URL selects the screen synchronously. Effects only load its data; they
+ * never write an old screen back into history after Back/Forward. */
 export function TalksRouterSync() {
-  const pathname = normalizeTalksPathname(usePathname() || "/");
-  const router = useRouter();
-
-  const lastPushedFullRef = useRef("");
-
+  const pathname = usePathname() || "/";
   const {
-    page,
-    setPage,
-    resetProfileVisit,
-    fetchAndMergeVisitByHandle,
-    setProfileVisitUserId,
-    setProfileNotFoundHandle,
-    profileVisitUserId,
-    profile,
-    users,
-    activePostId,
-    talksPathnameHydration,
+    resetProfileVisit, fetchAndMergeVisitByHandle, setProfileVisitUserId,
+    setProfileNotFoundHandle, setResolvedProfileHandle, setProfileRouteError,
     hydratePostFromServer,
   } = useAppState();
 
-  // URL → React state (initial load, back/forward, external links).
   useEffect(() => {
-    const searchSuffix = typeof window !== "undefined" ? window.location.search || "" : "";
-    const fullCurrent = pathname + searchSuffix;
-
-    if (lastPushedFullRef.current === fullCurrent) {
-      lastPushedFullRef.current = "";
-      return;
+    let cancelled = false;
+    const parsed = parseTalksPathname(pathname);
+    resetProfileVisit();
+    setProfileRouteError("");
+    if (parsed.page === "post" && parsed.postId) {
+      void hydratePostFromServer(parsed.postId, () => !cancelled);
     }
-
-    const { begin: beginHydration, end: endHydration } = talksPathnameHydration;
-    let hydrateCompletesAsync = false;
-    beginHydration();
-    try {
-      const parsed = parseTalksPathname(pathname);
-
-      if (parsed.page === "post" && parsed.postId) {
-        hydrateCompletesAsync = true;
-        resetProfileVisit();
-        void hydratePostFromServer(parsed.postId).finally(() => {
-          endHydration();
-        });
-        return;
-      }
-
-      if (parsed.page === "profile" && parsed.profileHandle) {
-        hydrateCompletesAsync = true;
-        void fetchAndMergeVisitByHandle(parsed.profileHandle)
-          .then((bundle) => {
-            if (!bundle?.profile?.id) {
-              resetProfileVisit();
-              setProfileNotFoundHandle(String(parsed.profileHandle || "").trim());
-              setPage("profile");
-              return;
-            }
-            setProfileNotFoundHandle(null);
-            setProfileVisitUserId(String(bundle.profile.id));
-            setPage("profile");
-          })
-          .catch(() => {
-            resetProfileVisit();
-            setProfileNotFoundHandle(String(parsed.profileHandle || "").trim());
-            setPage("profile");
-          })
-          .finally(() => {
-            endHydration();
-          });
-        return;
-      }
-
-      if (parsed.page === "profile" && parsed.selfProfile) {
-        resetProfileVisit();
-        setPage("profile");
-        return;
-      }
-
-      resetProfileVisit();
-      setPage(parsed.page);
-    } finally {
-      if (!hydrateCompletesAsync) endHydration();
+    if (parsed.page === "profile" && parsed.profileHandle) {
+      const handle = parsed.profileHandle;
+      void fetchAndMergeVisitByHandle(handle, () => !cancelled).then(bundle => {
+        if (cancelled) return;
+        if (bundle?.profile?.id) setProfileVisitUserId(String(bundle.profile.id));
+        else setProfileNotFoundHandle(handle);
+      }).catch(error => {
+        if (cancelled) return;
+        if (error?.status === 404) setProfileNotFoundHandle(handle);
+        else setProfileRouteError(error?.message || "Could not load this profile. Please reload to retry.");
+      }).finally(() => {
+        if (!cancelled) setResolvedProfileHandle(handle);
+      });
     }
-  }, [
-    pathname,
-    fetchAndMergeVisitByHandle,
-    hydratePostFromServer,
-    resetProfileVisit,
-    router,
-    setPage,
-    setProfileVisitUserId,
-    setProfileNotFoundHandle,
-    talksPathnameHydration,
-  ]);
-
-  // React state → URL after in-app navigations (`setPage` from sidebar etc.).
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (talksPathnameHydration.shouldDeferTalksPush()) return;
-
-    const built = buildTalksPathname({ page, profileVisitUserId, profile, users, activePostId });
-    if (built == null) return;
-
-    const curPath = normalizeTalksPathname(window.location.pathname);
-    const curSearch = window.location.search || "";
-
-    const nextFull = `${built}${curSearch}`;
-    const currentFull = `${curPath}${curSearch}`;
-
-    if (nextFull === currentFull) return;
-
-    lastPushedFullRef.current = nextFull;
-    router.replace(nextFull, { scroll: false });
-  }, [pathname, page, profileVisitUserId, profile, users, activePostId, router, talksPathnameHydration]);
+    return () => { cancelled = true; };
+  }, [pathname, resetProfileVisit, fetchAndMergeVisitByHandle,
+    setProfileVisitUserId, setProfileNotFoundHandle, setResolvedProfileHandle,
+    setProfileRouteError, hydratePostFromServer]);
 
   // `#profile@x` / `#forum` legacy links → real paths once.
   useEffect(() => {
@@ -136,7 +56,7 @@ export function TalksRouterSync() {
         const pid = postHash[1].trim();
         if (!pid) return;
         const baseSearch = typeof window.location.search === "string" ? window.location.search : "";
-        router.replace(`/p/${encodeURIComponent(pid)}${baseSearch}`, { scroll: false });
+        navigateTalks(`/p/${encodeURIComponent(pid)}${baseSearch}`, { replace: true });
         return;
       }
 
@@ -151,7 +71,7 @@ export function TalksRouterSync() {
         handle = handle.trim();
         if (!handle) return;
         const baseSearch = typeof window.location.search === "string" ? window.location.search : "";
-        router.replace(`/profile/${encodeURIComponent(handle)}${baseSearch}`, { scroll: false });
+        navigateTalks(`/profile/${encodeURIComponent(handle)}${baseSearch}`, { replace: true });
         return;
       }
 
@@ -170,14 +90,14 @@ export function TalksRouterSync() {
         }[key] || null;
       if (simple) {
         const baseSearch = typeof window.location.search === "string" ? window.location.search : "";
-        router.replace(simple + baseSearch, { scroll: false });
+        navigateTalks(simple + baseSearch, { replace: true });
       }
     };
 
     migrateHash();
     window.addEventListener("hashchange", migrateHash);
     return () => window.removeEventListener("hashchange", migrateHash);
-  }, [router]);
+  }, []);
 
   return null;
 }

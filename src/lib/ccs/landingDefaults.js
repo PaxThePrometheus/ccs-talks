@@ -104,31 +104,31 @@ export function mergeLandingCms(stored) {
     ...storedSansBadges,
     statLabels: { ...d.statLabels, ...(stored.statLabels && typeof stored.statLabels === "object" ? stored.statLabels : {}) },
     featureCards:
-      Array.isArray(stored.featureCards) && stored.featureCards.length > 0 ? stored.featureCards.map((c) => ({ ...c })) : d.featureCards,
+      Array.isArray(stored.featureCards) ? stored.featureCards.map((c) => ({ ...c })) : d.featureCards,
     howItWorks:
-      Array.isArray(stored.howItWorks) && stored.howItWorks.length > 0 ? stored.howItWorks.map((x) => ({ ...x })) : d.howItWorks,
+      Array.isArray(stored.howItWorks) ? stored.howItWorks.map((x) => ({ ...x })) : d.howItWorks,
     communityOrgs:
-      Array.isArray(stored.communityOrgs) && stored.communityOrgs.length > 0
+      Array.isArray(stored.communityOrgs)
         ? stored.communityOrgs.map((o) => ({ ...o, tags: Array.isArray(o.tags) ? [...o.tags] : [] }))
         : d.communityOrgs,
     communityEvents:
-      Array.isArray(stored.communityEvents) && stored.communityEvents.length > 0
+      Array.isArray(stored.communityEvents)
         ? stored.communityEvents.map((ev) => ({ ...ev }))
         : d.communityEvents,
     organizerCta: { ...d.organizerCta, ...(stored.organizerCta && typeof stored.organizerCta === "object" ? stored.organizerCta : {}) },
     bottomCta: { ...d.bottomCta, ...(stored.bottomCta && typeof stored.bottomCta === "object" ? stored.bottomCta : {}) },
     footerColumns:
-      Array.isArray(stored.footerColumns) && stored.footerColumns.length > 0
+      Array.isArray(stored.footerColumns)
         ? stored.footerColumns.map((c) => ({ title: String(c.title || ""), links: Array.isArray(c.links) ? c.links.map(String) : [] }))
         : d.footerColumns,
     forumRail: {
       ...d.forumRail,
-      rising: Array.isArray(frIn.rising) && frIn.rising.length ? frIn.rising.map(String) : d.forumRail.rising,
-      interests: Array.isArray(frIn.interests) && frIn.interests.length ? frIn.interests.map(String) : d.forumRail.interests,
-      trending: Array.isArray(frIn.trending) && frIn.trending.length ? frIn.trending.map(String) : d.forumRail.trending,
+      rising: Array.isArray(frIn.rising) ? frIn.rising.map(String) : d.forumRail.rising,
+      interests: Array.isArray(frIn.interests) ? frIn.interests.map(String) : d.forumRail.interests,
+      trending: Array.isArray(frIn.trending) ? frIn.trending.map(String) : d.forumRail.trending,
     },
     postTagOptions:
-      Array.isArray(stored.postTagOptions) && stored.postTagOptions.length > 0
+      Array.isArray(stored.postTagOptions)
         ? stored.postTagOptions.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 24)
         : d.postTagOptions,
     tagColors: mergeTagColorsMap(stored.tagColors, d.tagColors),

@@ -1,11 +1,9 @@
-import { NextResponse } from "next/server";
-import { ensureReady } from "@/lib/ccs/drizzle-client";
-import { bootstrapStatus } from "@/lib/ccs/admin";
-
 export const dynamic = "force-dynamic";
 
+/** Public capability information only; never disclose database/account counts. */
 export async function GET() {
-  await ensureReady();
-  const status = await bootstrapStatus();
-  return NextResponse.json(status);
+  return Response.json(
+    { bootstrap: false, inviteRequired: false, registrationOpen: false },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }

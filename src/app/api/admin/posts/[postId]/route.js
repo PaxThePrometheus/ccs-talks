@@ -1,19 +1,20 @@
+import { staffRoute } from "@/lib/ccs/staffRoute";
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
 import {
   adminDeletePost,
-  adminEditPost,
-  adminPinPost,
+  adminPatchPost,
+  postModerationDetail,
   requireStaff,
 } from "@/lib/ccs/admin";
 
 export const dynamic = "force-dynamic";
 
-export async function PATCH(request, { params }) {
+async function PATCHHandler(request, { params }) {
   await ensureReady();
   const token = await readSessionTokenFromCookies();
-  const gate = await requireStaff(token);
+  const gate = await requireStaff(token, { recentAuth: true });
   if (gate.error) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   let body = {};
@@ -25,23 +26,27 @@ export async function PATCH(request, { params }) {
 
   const { postId } = await params;
 
-  if (typeof body.pinned === "boolean") {
-    await adminPinPost(gate.row, postId, body.pinned);
-  }
-  if (typeof body.content === "string") {
-    await adminEditPost(gate.row, postId, body.content);
-  }
-
-  return NextResponse.json({ ok: true });
+  const out=await adminPatchPost(gate.row,postId,body);
+  return NextResponse.json(out, {status:out.error ? out.status : 200});
 }
 
-export async function DELETE(_request, { params }) {
+async function DELETEHandler(_request, { params }) {
   await ensureReady();
   const token = await readSessionTokenFromCookies();
-  const gate = await requireStaff(token);
+  const gate = await requireStaff(token, { recentAuth: true });
   if (gate.error) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   const { postId } = await params;
-  await adminDeletePost(gate.row, postId);
-  return NextResponse.json({ ok: true });
+  const out=await adminDeletePost(gate.row, postId);
+  return NextResponse.json(out, {status:out.error ? out.status : 200});
 }
+
+export const PATCH = staffRoute(PATCHHandler);
+export const DELETE = staffRoute(DELETEHandler);
+
+async function GETHandler(_request,{params}) {
+  const token=await readSessionTokenFromCookies();const gate=await requireStaff(token);
+  if(gate.error)return NextResponse.json({error:gate.error},{status:gate.status});
+  const {postId}=await params;return NextResponse.json(await postModerationDetail(gate.row,postId));
+}
+export const GET=staffRoute(GETHandler);

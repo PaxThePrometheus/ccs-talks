@@ -154,10 +154,9 @@ export function PostDetailScreen({ readOnly = false, onSignInPrompt }) {
     setEditText(post.content);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!post) return;
-    updatePost(post.id, { content: editText });
-    setEditing(false);
+    if(await updatePost(post.id, { content: editText }))setEditing(false);
   };
 
   const viewerTitleBase = post?.content?.trim().slice(0, 48) || "Post";

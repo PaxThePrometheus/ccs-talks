@@ -1,7 +1,11 @@
+import { PROFILE_EDITABLE_FIELDS } from "./profileFields.mjs";
+import { auditedMutation } from "./auditedMutation";
+import { RequestError, resultRows, objectBody, textField } from "./requestValidation.mjs";
+import { validateContent, enforceGuestRead } from "./contentPolicy";
 import crypto, { randomUUID } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { DEFAULT_PROFILE } from "@/components/ccs-talks/config/appConfig";
-import { and, asc, count, desc, eq, ilike, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, ilike, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import {
   CCS_DEFAULT_FRIENDS,
   CCS_DEFAULT_PREFS,
@@ -13,7 +17,7 @@ import {
 } from "./accountDefaults";
 import { newPasswordRecord, verifyPassword } from "./auth";
 import { authorProfilesByIds, buildFeed } from "./feed";
-import { getDb } from "./drizzle-client";
+import { getDb, queryDb } from "./drizzle-client";
 import {
   CCS_OLFU_UNIVERSITY,
   USERNAME_CHANGE_COOLDOWN_MS,
@@ -27,6 +31,8 @@ import {
 } from "./imageUploadLimits";
 import { CCS_COMMENT_BODY_MAX_CHARS, CCS_POST_BODY_MAX_CHARS } from "./postContentLimits";
 import * as schema from "./schema";
+import { isStaff, staffSessionValid, STAFF_SESSION_MS } from "./staffPolicy.mjs";
+import { verifyMfa } from "./mfa";
 
 const PRESENCE_WINDOW_MS = 120_000;
 
@@ -76,9 +82,14 @@ function postRowToLegacy(row) {
   };
 }
 
+let lastSessionPurge = 0;
+let sessionPurgePending = null;
 export async function purgeExpiredSessions(db) {
-  const now = Date.now();
-  await db.delete(schema.ccsSessions).where(lte(schema.ccsSessions.expiresAt, now));
+  if (Date.now() - lastSessionPurge < 300_000) return;
+  if (!sessionPurgePending) {
+    sessionPurgePending = db.delete(schema.ccsSessions).where(lte(schema.ccsSessions.expiresAt, Date.now())).then(() => { lastSessionPurge = Date.now(); });
+  }
+  try { await sessionPurgePending; } finally { sessionPurgePending = null; }
 }
 
 async function enrichLegacyPostsOpenReportCounts(db, legacyPosts) {
@@ -95,18 +106,16 @@ async function enrichLegacyPostsOpenReportCounts(db, legacyPosts) {
   }
 }
 
-async function hydrateClientPosts(db, viewerUserId, legacyPosts) {
-  await enrichLegacyPostsOpenReportCounts(db, legacyPosts);
-  const idsNeeded = [...new Set(legacyPosts.map((p) => p.userId).filter(Boolean))];
-  if (viewerUserId) idsNeeded.push(viewerUserId);
-  const uniq = [...new Set(idsNeeded)];
-  const userRows =
-    uniq.length === 0
-      ? []
-      : await db.select().from(schema.ccsUsers).where(inArray(schema.ccsUsers.id, uniq));
-  const shimUsers = userRows.map(userRowToShim);
-  const shimDb = { users: shimUsers, posts: legacyPosts };
-  return buildFeed(shimDb, viewerUserId, {}).posts;
+async function hydrateFeedBundle(db,viewerUserId,legacyPosts) {
+  const ids=[...new Set([...legacyPosts.map(post=>post.userId).filter(Boolean),...(viewerUserId ? [viewerUserId] : [])])];
+  const [,rows]=await Promise.all([
+    enrichLegacyPostsOpenReportCounts(db,legacyPosts),
+    ids.length ? db.select({id:schema.ccsUsers.id,profile:schema.ccsUsers.profile,role:schema.ccsUsers.role,bookmarkedPostIds:schema.ccsUsers.bookmarkedPostIds}).from(schema.ccsUsers).where(inArray(schema.ccsUsers.id,ids)) : Promise.resolve([]),
+  ]);
+  return buildFeed({users:rows.map(userRowToShim),posts:legacyPosts},viewerUserId,{});
+}
+async function hydrateClientPosts(db,viewerUserId,legacyPosts) {
+  return (await hydrateFeedBundle(db,viewerUserId,legacyPosts)).posts;
 }
 
 const FEED_PAGE_DEFAULT = 30;
@@ -139,8 +148,8 @@ function decodeFeedCursor(raw) {
  * @param {{ limit?: number, cursor?: string|null }} [opts]
  */
 export async function fetchPublicFeed(viewerUserId, tagFilter, opts = {}) {
+  await enforceGuestRead(viewerUserId);
   const db = await getDb();
-  await purgeExpiredSessions(db);
 
   let limit = Number(opts.limit);
   if (!Number.isFinite(limit) || limit < 1) limit = FEED_PAGE_DEFAULT;
@@ -170,33 +179,28 @@ export async function fetchPublicFeed(viewerUserId, tagFilter, opts = {}) {
   const slice = hasMore ? rows.slice(0, limit) : rows;
   const nextCursor = hasMore && slice.length ? encodeFeedCursor(slice[slice.length - 1]) : null;
 
-  const legacy = slice.map(postRowToLegacy);
-  await enrichLegacyPostsOpenReportCounts(db, legacy);
+  const built=await hydrateFeedBundle(db,viewerUserId,slice.map(postRowToLegacy));
+  return {...built,nextCursor};
+}
 
-  /** Viewer bookmarks / likedBy flags need viewer row merged into shim. */
-  const idsNeeded = [...new Set(slice.map((r) => r.userId).filter(Boolean))];
-  if (viewerUserId) idsNeeded.push(viewerUserId);
-  const uniq = [...new Set(idsNeeded)];
-
-  const userRows =
-    uniq.length === 0
-      ? []
-      : await db.select().from(schema.ccsUsers).where(inArray(schema.ccsUsers.id, uniq));
-  const shimUsers = userRows.map(userRowToShim);
-
-  const shimDb = { users: shimUsers, posts: legacy };
-  const built = buildFeed(shimDb, viewerUserId, { tagFilter: tagFilter && tagFilter !== "All" ? tagFilter : null });
-  return { ...built, nextCursor };
+export async function resolveSessionRow(token) {
+  if (!token) return null;
+  const db = await getDb();
+  const now = Date.now();
+  const [match] = await db.select({ row: schema.ccsUsers, session: schema.ccsSessions })
+    .from(schema.ccsSessions).innerJoin(schema.ccsUsers, eq(schema.ccsUsers.id, schema.ccsSessions.userId))
+    .where(and(eq(schema.ccsSessions.token, token), gt(schema.ccsSessions.expiresAt, now), eq(schema.ccsUsers.banned, false))).limit(1);
+  if (!match || (isStaff(match.row.role) && !staffSessionValid(match.session, now))) return null;
+  // Write at most one heartbeat per minute, not one per authenticated request.
+  if (isStaff(match.row.role) && now - Number(match.session.lastSeenAt) >= 60_000) {
+    await db.update(schema.ccsSessions).set({ lastSeenAt: now }).where(and(eq(schema.ccsSessions.token, token), eq(schema.ccsSessions.lastSeenAt, match.session.lastSeenAt)));
+  }
+  return match;
 }
 
 export async function resolveViewerFromSession(token) {
-  const db = await getDb();
-  await purgeExpiredSessions(db);
-  if (!token) return null;
-  const [sess] = await db.select().from(schema.ccsSessions).where(eq(schema.ccsSessions.token, token)).limit(1);
-  if (!sess) return null;
-  const [userRow] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, sess.userId)).limit(1);
-  return userRowToDomain(userRow);
+  const match = await resolveSessionRow(token);
+  return match ? userRowToDomain(match.row) : null;
 }
 
 export async function findUserByEmail(email) {
@@ -271,8 +275,13 @@ export function clampPostCommentImageUrl(raw) {
 
 export async function insertSession(db, userId, maxAgeDays = 14) {
   const token = makeSessionToken();
-  const expiresAt = Date.now() + maxAgeDays * 24 * 60 * 60 * 1000;
-  await db.insert(schema.ccsSessions).values({ token, userId, expiresAt });
+  const now = Date.now();
+  const [user] = await db.select({ role: schema.ccsUsers.role, banned: schema.ccsUsers.banned }).from(schema.ccsUsers).where(eq(schema.ccsUsers.id, userId)).limit(1);
+  if (!user || user.banned) throw new Error("Account unavailable");
+  const expiresAt = now + (isStaff(user.role) ? STAFF_SESSION_MS : maxAgeDays * 24 * 60 * 60 * 1000);
+  if (isStaff(user.role)) await auditedMutation(userId,"staff_login",userId,
+    "INSERT INTO ccs_sessions(token,user_id,expires_at,created_at,last_seen_at,authenticated_at) VALUES($1,$2,$3,$4,$4,$4)",[token,userId,expiresAt,now]);
+  else await db.insert(schema.ccsSessions).values({ token, userId, expiresAt, createdAt: now, lastSeenAt: now, authenticatedAt: now });
   return { token, expiresAt };
 }
 
@@ -343,17 +352,23 @@ export async function registerAccountRow(email, password, name, emailLocalSugges
   return { profile, token: sess.token, expiresAt: sess.expiresAt };
 }
 
-export async function loginAccountRow(email, password) {
+export async function loginAccountRow(email, password, { staffOnly = false, code = "" } = {}) {
   const db = await getDb();
   await purgeExpiredSessions(db);
 
   const user = await findUserByEmail(email);
-  if (!user) return { fail: true };
-  if (!verifyPassword(password, user.passwordSalt, user.passwordHash)) return { fail: true };
+  if (!user) {
+    // Perform equivalent password work for unknown accounts as well.
+    await verifyPassword(password, "00".repeat(16), "00".repeat(64));
+    return { fail: true };
+  }
+  if (!await verifyPassword(password, user.passwordSalt, user.passwordHash)) return { fail: true };
 
   /** Block banned users from re-establishing a session. */
   const [row] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, user.id)).limit(1);
   if (row?.banned) return { banned: true, reason: row.bannedReason || "" };
+  if (!row || (staffOnly && !isStaff(row.role))) return { fail: true };
+  if (!await verifyMfa(user.id, code)) return { fail: true };
 
   const sess = await insertSession(db, user.id);
   return { profile: user.profile, token: sess.token, expiresAt: sess.expiresAt };
@@ -362,7 +377,10 @@ export async function loginAccountRow(email, password) {
 export async function revokeSessionToken(token) {
   const db = await getDb();
   if (!token) return;
-  await db.delete(schema.ccsSessions).where(eq(schema.ccsSessions.token, token));
+  await db.execute(sql`WITH removed AS (DELETE FROM ccs_sessions WHERE token=${token} RETURNING user_id), logged AS (
+    INSERT INTO ccs_audit_log(id,actor_id,action,target_id,meta,created_at)
+    SELECT ${`a_${randomUUID()}`},u.id,'staff_logout',u.id,'{}'::jsonb,${Date.now()} FROM removed r JOIN ccs_users u ON u.id=r.user_id WHERE u.role IN ('admin','moderator') RETURNING id)
+    SELECT user_id FROM removed`);
 }
 
 export async function clientPostPreview(viewerUserId, postId) {
@@ -376,6 +394,7 @@ export async function clientPostPreview(viewerUserId, postId) {
 
 /** Single post + author (and viewer when signed in) for deep links `/p/{id}`. */
 export async function fetchSinglePostEnvelope(viewerUserId, postId) {
+  await enforceGuestRead(viewerUserId);
   const db = await getDb();
   const [row] = await db.select().from(schema.ccsPosts).where(eq(schema.ccsPosts.id, postId)).limit(1);
   if (!row) return null;
@@ -393,7 +412,7 @@ export async function fetchSinglePostEnvelope(viewerUserId, postId) {
 }
 
 export async function createUserPost(viewerUserId, content, tag, imageUrl = "") {
-  const body = String(content || "").trim();
+  const body = await validateContent(content);
   if (body.length > CCS_POST_BODY_MAX_CHARS) return { contentTooLarge: true };
   const db = await getDb();
   let clampedImage = "";
@@ -407,7 +426,7 @@ export async function createUserPost(viewerUserId, content, tag, imageUrl = "") 
   await db.insert(schema.ccsPosts).values({
     id,
     userId: viewerUserId,
-    content,
+    content: body,
     tag: tag || "General",
     imageUrl: clampedImage,
     createdAt: now,
@@ -421,7 +440,7 @@ export async function createUserPost(viewerUserId, content, tag, imageUrl = "") 
 }
 
 export async function updatePostBody(postId, ownerUserId, content) {
-  const body = String(content || "").trim();
+  const body = await validateContent(content);
   if (body.length > CCS_POST_BODY_MAX_CHARS) return { contentTooLarge: true };
   const db = await getDb();
   const [existing] = await db.select().from(schema.ccsPosts).where(eq(schema.ccsPosts.id, postId)).limit(1);
@@ -504,7 +523,7 @@ export async function listCommentsEnvelope(postId) {
 export async function addCommentEnvelope(postId, viewerUserId, text, imageUrl = "", parentIdRaw = null) {
   const db = await getDb();
 
-  const bodyText = String(text || "").trim();
+  const bodyText = await validateContent(text,"comment");
   if (!bodyText) return { empty: true };
   if (bodyText.length > CCS_COMMENT_BODY_MAX_CHARS) return { tooLong: true };
 
@@ -540,8 +559,6 @@ export async function addCommentEnvelope(postId, viewerUserId, text, imageUrl = 
     createdAt,
   });
 
-  const nextCount = Number(postRow.commentCount ?? 0) + 1;
-  await db.update(schema.ccsPosts).set({ commentCount: nextCount }).where(eq(schema.ccsPosts.id, postId));
 
   const postCard = await clientPostPreview(viewerUserId, postId);
 
@@ -564,7 +581,7 @@ export async function addCommentEnvelope(postId, viewerUserId, text, imageUrl = 
 
 export async function updateCommentEnvelope(postId, commentId, viewerUserId, text) {
   const db = await getDb();
-  const bodyText = String(text || "").trim();
+  const bodyText = await validateContent(text,"comment");
   if (!bodyText) return { empty: true };
   if (bodyText.length > CCS_COMMENT_BODY_MAX_CHARS) return { tooLong: true };
 
@@ -605,33 +622,12 @@ export async function deleteCommentEnvelope(postId, commentId, viewerUserId) {
 
   await db.delete(schema.ccsComments).where(eq(schema.ccsComments.id, commentId));
 
-  const nextCount = Math.max(0, Number(postRow.commentCount ?? 0) - 1);
-  await db.update(schema.ccsPosts).set({ commentCount: nextCount }).where(eq(schema.ccsPosts.id, postId));
 
   const postCard = await clientPostPreview(viewerUserId, postId);
   return { ok: true, post: postCard };
 }
 
-const PROFILE_KEYS = new Set([
-  "name",
-  "handle",
-  "college",
-  "program",
-  "year",
-  "campus",
-  "focus",
-  "org",
-  "bio",
-  "signature",
-  "signatureImage",
-  "signatureLink",
-  "avatarColor",
-  "avatarAccent",
-  "bannerColor",
-  "bannerAccent",
-  "avatarImage",
-  "bannerImage",
-]);
+const PROFILE_KEYS = new Set(PROFILE_EDITABLE_FIELDS);
 
 /** User + staff profile patch field names (values applied in `patchAccountBundles` / admin editor). */
 export const PROFILE_PATCH_FIELD_KEYS = PROFILE_KEYS;
@@ -682,12 +678,10 @@ export function accountWireFromRow(row) {
 }
 
 export async function getAccountWire(token) {
-  const viewer = await resolveViewerFromSession(token);
-  if (!viewer) return null;
-
+  const match = await resolveSessionRow(token);
+  if (!match) return null;
   const db = await getDb();
-  const [row] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, viewer.id)).limit(1);
-  if (!row) return null;
+  const row = match.row;
   const wire = accountWireFromRow(row);
   wire.friends = await friendsWireFromDb(db, row);
   return wire;
@@ -776,6 +770,11 @@ export async function isHandleTakenElsewhere(db, handle, excludeUserId) {
 
 /** Merge profile + optional prefs/friends/subs/activities payloads (authenticated user). */
 export async function patchAccountBundles(userId, body) {
+  objectBody(body,["profile","prefs","subs","activities"]);
+  if (body.profile!==undefined) {
+    objectBody(body.profile,[...PROFILE_KEYS]);
+    for (const [key,value] of Object.entries(body.profile)) textField(value,key,["avatarImage","bannerImage","signatureImage"].includes(key) ? 8_000_000 : key==="bio" || key==="signature" ? 280 : key==="signatureLink" ? 4096 : key==="handle" ? 32 : key==="name" ? 80 : 120);
+  }
   const db = await getDb();
   const [row] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, userId)).limit(1);
   if (!row) return { unauthorized: true };
@@ -850,7 +849,7 @@ export async function patchAccountBundles(userId, body) {
   }
   if (body.activities !== undefined) nextActs = normalizeActivities(body.activities);
 
-  await db
+  const changed = await db
     .update(schema.ccsUsers)
     .set({
       profile: nextProfile,
@@ -859,8 +858,9 @@ export async function patchAccountBundles(userId, body) {
       subsState: nextSubs,
       activities: nextActs,
     })
-    .where(eq(schema.ccsUsers.id, userId));
+    .where(and(eq(schema.ccsUsers.id, userId),eq(schema.ccsUsers.version,row.version))).returning({id:schema.ccsUsers.id});
 
+  if (!changed.length) throw new RequestError("Account changed. Reload before saving again.",409);
   const [fresh] = await db.select().from(schema.ccsUsers).where(eq(schema.ccsUsers.id, userId)).limit(1);
   return { wire: fresh ? accountWireFromRow(fresh) : accountWireFromRow({ ...row, profile: nextProfile, prefs: nextPrefs }) };
 }
@@ -886,7 +886,10 @@ export async function listTicketsForUser(userId) {
     .from(schema.ccsTickets)
     .where(eq(schema.ccsTickets.userId, userId))
     .orderBy(desc(schema.ccsTickets.updatedAt));
+  const ids=rows.map(row=>row.id);
+  const messages=ids.length ? resultRows(await queryDb(`SELECT ticket_id,author_id AS "authorId",body,created_at AS "createdAt",id FROM ccs_ticket_messages WHERE ticket_id=ANY($1::text[]) ORDER BY created_at,id`,[ids])) : [];
   return rows.map((r) => ({
+    messages:messages.filter(message=>message.ticket_id===r.id),
     id: r.id,
     subject: r.subject,
     body: r.body,
@@ -1142,8 +1145,8 @@ async function matchingUserIdsForSearch(db, qRaw) {
 }
 
 export async function searchForumPostsEnvelope(viewerUserId, opts = {}) {
+  await enforceGuestRead(viewerUserId);
   const db = await getDb();
-  await purgeExpiredSessions(db);
 
   let limit = Number(opts.limit);
   if (!Number.isFinite(limit) || limit < 1) limit = SEARCH_LIMIT_DEFAULT;
@@ -1191,15 +1194,6 @@ export async function searchForumPostsEnvelope(viewerUserId, opts = {}) {
   const slice = hasMore ? rows.slice(0, limit) : rows;
   const nextCursor = hasMore && slice.length ? encodeFeedCursor(slice[slice.length - 1]) : null;
 
-  const legacy = slice.map(postRowToLegacy);
-  await enrichLegacyPostsOpenReportCounts(db, legacy);
-
-  const idsNeeded = [...new Set(slice.map((r) => r.userId).filter(Boolean))];
-  if (viewerUserId) idsNeeded.push(viewerUserId);
-  const uniq = [...new Set(idsNeeded)];
-  const userRows = uniq.length === 0 ? [] : await db.select().from(schema.ccsUsers).where(inArray(schema.ccsUsers.id, uniq));
-  const shimUsers = userRows.map(userRowToShim);
-  const shimDb = { users: shimUsers, posts: legacy };
-  const built = buildFeed(shimDb, viewerUserId, {});
-  return { ...built, nextCursor };
+  const built=await hydrateFeedBundle(db,viewerUserId,slice.map(postRowToLegacy));
+  return {...built,nextCursor};
 }

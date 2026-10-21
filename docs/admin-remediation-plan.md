@@ -6,6 +6,8 @@ Implementation update (21 October 2026): the core Phase 1/2 access work remains 
 
 Core Phase 3–6 implementation has advanced substantially; detailed delivery and remaining acceptance checks are below. Release is still gated on authenticated preview/infrastructure verification, with optional MFA configuration/enrollment remaining owner-controlled.
 
+Follow-on work: [community expansion roadmap](community-expansion-plan.md) proposes dedicated niche forums, hashtags, direct messages and group chats in phases C0–C5. These new features remain planning work and do not replace the outstanding admin release gates. A separate faculty-title display correction preserves faculty titles alongside staff roles on full and hover profile views.
+
 Design decision: the user chose **Inspector**, the third proposal, on 21 October 2026. Implement the burgundy Apple Mail-inspired navigation rail, work list and detail inspector; do not return to the rejected sidebar-dashboard direction. The initial implementation now routes /admin to Inspector, with Overview analytics as the default landing workspace, list/detail selection for records, URL state, light/dark/system themes, and mobile list/detail navigation. Existing management editors remain available within the selected-record pane. Old console chrome was removed and editors extracted into AdminPanes.jsx. This advances part of Phases 4/5/6; it does not mark those phases complete or replace the remaining security/data work.
 
 Continue from the delivery checklist below. Do not re-provision existing administrators, reset credentials, delete the legacy orphan, or mark the complete release gate passed based only on local fixtures. All Phase 1/2 security changes must remain intact.

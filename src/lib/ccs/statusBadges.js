@@ -26,9 +26,10 @@ export function sanitizePublicRoleBadge(v) {
  */
 export function statusBadgeDisplayLabels(user) {
   const forumRole = typeof user?.forumRole === "string" ? user.forumRole.trim().toLowerCase() : "student";
-  if (forumRole === "admin") return ["Administrator"];
-  if (forumRole === "moderator") return ["Moderator"];
+  const labels = [];
+  if (forumRole === "admin") labels.push("Administrator");
+  if (forumRole === "moderator") labels.push("Moderator");
   const pr = sanitizePublicRoleBadge(user?.publicRoleBadge);
-  if (pr && FACULTY_MAP[pr]) return [FACULTY_MAP[pr]];
-  return [];
+  if (pr && FACULTY_MAP[pr]) labels.push(FACULTY_MAP[pr]);
+  return labels;
 }

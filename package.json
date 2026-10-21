@@ -11,6 +11,7 @@
     "test:browser": "node scripts/check-admin-browser.mjs",
     "test:routing": "node tests/browser/public-routing.cjs",
     "test:performance": "node --test tests/public-loading.test.mjs",
+    "test:profile": "node --test tests/profile-status.test.mjs",
     "db:admin": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/migrate-admin-integrity.mjs",
     "db:staff": "node --env-file-if-exists=.env.local scripts/migrate-staff-security.mjs",
     "admin:provision": "node --env-file-if-exists=.env.local scripts/provision-first-admin.mjs",

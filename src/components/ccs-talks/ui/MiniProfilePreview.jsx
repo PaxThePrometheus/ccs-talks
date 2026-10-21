@@ -39,6 +39,8 @@ export function MiniProfilePreview({ visible, user, anchorRect, badgeColors, onR
 
   return (
     <div
+      role="region"
+      aria-label={`Profile preview for ${user.name}`}
       style={{
         position: "fixed",
         left: pos.left,

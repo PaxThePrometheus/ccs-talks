@@ -7,12 +7,12 @@ const assert = require('node:assert/strict');
 // Run against the actual production Next router, not a component/router mock.
 // Every API is intercepted before opening the app; no hosted data is touched.
 const base = process.env.CCS_ROUTING_BASE_URL || 'http://127.0.0.1:3113';
-const profile = { id: 'u_fixture', handle: 'fixture', name: 'Routing Fixture', bio: 'Synthetic profile', badges: [], avatarImage: '', bannerImage: '' };
-const author = { ...profile, id: 'u_author', handle: 'author', name: 'Fixture Author' };
+const profile = { id: 'u_fixture', handle: 'fixture', name: 'Routing Fixture', bio: 'Synthetic profile', badges: [], avatarImage: '', bannerImage: '', publicRoleBadge: 'instructor' };
+const author = { ...profile, id: 'u_author', handle: 'author', name: 'Fixture Author', publicRoleBadge: 'professor', forumRole: 'moderator' };
 const post = { id: 'p_fixture', userId: author.id, content: 'Routing regression post', tag: 'General', ts: Date.now(), likes: 0, commentCount: 0 };
 const me = { profile, role: 'student', prefs: { onboardingCompleted: true, reduceEffects: true, reduceMotion: true }, activities: [], friends: {}, subs: {} };
 
-async function setup(browser, { signedIn = false, authDelay = 0, profileDelay = 0, postLoginDelay = 0 } = {}) {
+async function setup(browser, { signedIn = false, authDelay = 0, profileDelay = 0, postLoginDelay = 0, viewerRole = 'student' } = {}) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   await context.addInitScript(() => {
     localStorage.setItem('ccs.prefs.v1', JSON.stringify({ reduceEffects: true, reduceMotion: true, mode: 'dark' }));
@@ -38,7 +38,7 @@ async function setup(browser, { signedIn = false, authDelay = 0, profileDelay = 
       const snapshot = session;
       const delay = ++authCalls === 1 ? authDelay : postLoginDelay;
       if (delay) await new Promise(resolve => setTimeout(resolve, delay));
-      body = snapshot ? me : { error: 'Unauthorized.' }; status = snapshot ? 200 : 401;
+      body = snapshot ? { ...me, role: viewerRole } : { error: 'Unauthorized.' }; status = snapshot ? 200 : 401;
     } else if (url.pathname === '/api/auth/login') {
       session = true; body = { profile };
     } else if (url.pathname === '/api/auth/logout') {
@@ -114,6 +114,12 @@ async function main() {
     await expect(member.page.getByText('App-level preferences.', { exact: false })).toBeVisible();
     await member.page.locator('.ccs-sidebar').getByText(/Home$/).click();
     await member.screen('forum');
+    await member.page.getByRole('button', { name: "View Fixture Author's profile" }).hover();
+    const preview = member.page.getByRole('region', { name: 'Profile preview for Fixture Author' });
+    await expect(preview.getByText('Professor', { exact: true })).toBeVisible();
+    await expect(preview.getByText('Moderator', { exact: true })).toBeVisible();
+    await member.page.screenshot({ path: path.join(artifacts, 'faculty-hover-preview.png') });
+    await member.page.mouse.move(1400, 900);
     await member.page.getByText(post.content, { exact: true }).click();
     await expect(member.page).toHaveURL(`${base}/p/p_fixture`); await member.screen('post');
     await member.page.goBack(); await expect(member.page).toHaveURL(`${base}/forum`); await member.screen('forum');
@@ -126,6 +132,8 @@ async function main() {
     await member.page.goForward(); await member.screen('profile');
     await expect(member.page.getByText('Loading profile…')).toHaveCount(0);
     await expect(member.page.getByText('Fixture Author', { exact: true }).first()).toBeVisible();
+    await expect(member.page.getByText('Professor', { exact: true }).first()).toBeVisible();
+    await expect(member.page.getByText('Moderator', { exact: true }).first()).toBeVisible();
     await member.page.screenshot({ path: path.join(artifacts, 'profile-after-forward.png') });
     await member.page.getByRole('button', { name: 'Back to my profile', exact: true }).click();
     await expect(member.page).toHaveURL(`${base}/profile`); await member.screen('profile');
@@ -137,6 +145,14 @@ async function main() {
     assert.equal(member.documents.length, 1, 'provider must stay mounted through forum/post/profile/history changes');
     assert.deepEqual(member.errors, []);
     await member.context.close();
+
+    const self = await setup(browser, { signedIn: true, viewerRole: 'admin' });
+    await self.context.route(`${base}/admin**`, route => route.fulfill({ status: 404, body: 'No admin prefetch in this synthetic test' }));
+    await self.page.goto(`${base}/profile`); await self.screen('profile');
+    await expect(self.page.getByText('Instructor', { exact: true }).first()).toBeVisible();
+    await expect(self.page.getByText('Administrator', { exact: true }).first()).toBeVisible();
+    assert.deepEqual(self.errors, []);
+    await self.context.close();
 
     // Direct deep links render the requested screen before client effects run.
     for (const [url, name] of [['/p/p_fixture#c_fixture', 'post'], ['/profile/author', 'profile'], ['/profile/missing', 'profile'], ['/register', 'register']]) {

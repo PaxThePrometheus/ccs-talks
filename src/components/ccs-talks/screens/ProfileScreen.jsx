@@ -69,7 +69,7 @@ export function ProfileScreen() {
   }, [isGuestPeek, tab]);
 
   const displayUser = useMemo(() => {
-    if (!profileVisitUserId) return profile;
+    if (!profileVisitUserId) return users[profile.id] ?? profile;
     return users[profileVisitUserId] ?? null;
   }, [profileVisitUserId, users, profile]);
 

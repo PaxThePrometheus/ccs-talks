@@ -7,21 +7,34 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:admin": "node --test tests/admin-enrollment.test.mjs tests/staff-security.test.mjs tests/staff-services.test.mjs tests/integrity-upgrade.test.mjs",
+    "test:browser": "node scripts/check-admin-browser.mjs",
+    "test:routing": "node tests/browser/public-routing.cjs",
+    "test:performance": "node --test tests/public-loading.test.mjs",
+    "db:admin": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/migrate-admin-integrity.mjs",
+    "db:staff": "node --env-file-if-exists=.env.local scripts/migrate-staff-security.mjs",
+    "admin:provision": "node --env-file-if-exists=.env.local scripts/provision-first-admin.mjs",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
     "drizzle-orm": "^0.45.2",
+    "gsap": "3.12.5",
     "next": "16.2.4",
+    "otpauth": "^9.5.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "three": "0.128.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4",
     "drizzle-kit": "^0.31.10",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4"

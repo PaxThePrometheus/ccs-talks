@@ -10,14 +10,17 @@ import { APP_CONFIG } from "../config/appConfig";
 export function AuthScreen({ mode, setPage }) {
   const gsapLoaded = useScript(GSAP_CDN, { expectGlobal: "gsap" });
   const cardRef = useRef(null);
-  const { tokens, prefs, signIn, refreshFeed, hydrateAccountFromServer } = useAppState();
+  const { tokens, prefs, signIn, hydrateAccountFromServer } = useAppState();
   const isLight = prefs.mode === "light";
   const isLogin = mode === "login";
 
   const [email, setEmail] = useState("");
   const [handle, setHandle] = useState("");
-  const [handleStatus, setHandleStatus] = useState(null);
+  const [handleLookup, setHandleLookup] = useState(null);
+  const normalizedHandle = handle.trim().replace(/[^\w.]/g, "_").slice(0, 32);
+  const handleStatus = handleLookup?.handle === normalizedHandle ? handleLookup.status : null;
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [confirm, setConfirm] = useState("");
   const [agree, setAgree] = useState(false);
@@ -40,20 +43,17 @@ export function AuthScreen({ mode, setPage }) {
   useEffect(() => {
     if (isLogin) return;
     const h = handle.trim().replace(/[^\w.]/g, "_").slice(0, 32);
-    if (!h) {
-      setHandleStatus(null);
-      return;
-    }
+    if (!h) return;
     let alive = true;
     const t = window.setTimeout(() => {
       void api
         .checkHandleAvailable(h)
         .then((d) => {
           if (!alive) return;
-          setHandleStatus(d.available ? "ok" : "taken");
+          setHandleLookup({ handle: h, status: d.available ? "ok" : "taken" });
         })
         .catch(() => {
-          if (alive) setHandleStatus(null);
+          if (alive) setHandleLookup({ handle: h, status: null });
         });
     }, 400);
     return () => {
@@ -102,21 +102,20 @@ export function AuthScreen({ mode, setPage }) {
     setError("");
     try {
       if (isLogin) {
-        const data = await api.loginAccount({ email, password });
+        const data = await api.loginAccount({ email, password, code });
         signIn({ profile: data.profile });
       } else {
         const hh = handle.trim().replace(/[^\w.]/g, "_").slice(0, 32);
         const data = await api.registerAccount({ email, password, name: name.trim(), handle: hh || undefined });
         signIn({ profile: data.profile });
       }
-      await refreshFeed();
+      setPage("forum", { replace: true });
       try {
         const me = await api.getMe();
         if (me?.profile) hydrateAccountFromServer(me);
       } catch {
         /* keep optimistic sign-in snapshot */
       }
-      setPage("forum");
     } catch (e) {
       setError(e.message || "Could not complete sign-in. Try again.");
     } finally {
@@ -191,6 +190,9 @@ export function AuthScreen({ mode, setPage }) {
             <span style={{ flex: 1, height: 1, background: tokens.divider }} />OR<span style={{ flex: 1, height: 1, background: tokens.divider }} />
           </div>
 
+          {isLogin && <Field label="Authenticator or recovery code (if enabled)" tokens={tokens}>
+            <input name="code" autoComplete="one-time-code" maxLength={64} value={code} onChange={(e) => setCode(e.target.value)} style={inp(tokens)} />
+          </Field>}
           {!isLogin && (
             <Field label="Full name" tokens={tokens}>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Juan Dela Cruz" style={inp(tokens)} />

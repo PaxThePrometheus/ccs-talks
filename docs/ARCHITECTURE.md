@@ -15,7 +15,7 @@ For a shorter overview, see the top sections of **[README.md](../README.md)**.
 | **`CCS_PUBLIC_URL`** / **`NEXT_PUBLIC_APP_URL`** | **`src/lib/ccs/mailer.js`**; reset URL building in **`src/lib/ccs/passwordReset.js`** via **`publicAppBaseUrl()`** | Canonical public origin for reset links & similar. **`passwordReset.js`** falls back to **`VERCEL_URL`**, then **`http://localhost:3000`** when not in production. |
 | **`RESEND_API_KEY`** | **`src/lib/ccs/mailer.js`**, **`src/lib/ccs/admin.js`** (overview flags) | Sends password-reset mail via Resend; if unset, **`mailer.js`** logs/warns instead. |
 | **`CCS_EMAIL_FROM`** | **`src/lib/ccs/mailer.js`** | From address when using Resend. |
-| **`CCS_ADMIN_INVITE`** | **`src/lib/ccs/admin.js`** | Invite / bootstrap constraints for registering admins (**`registerAdminAccount`**, **`bootstrapStatus`**). |
+| **`CCS_ADMIN_INVITE`** | **`src/lib/ccs/admin.js`** | Legacy variable, no longer used. Public admin registration/bootstrap are closed; see [owner provisioning](admin-provisioning.md). |
 | **`VERCEL_URL`** | **`src/lib/ccs/passwordReset.js`**, **`src/lib/ccs/admin.js`** | Fallback base URL on Vercel when public URL env is unset. |
 | **`NODE_ENV`**, **`NEXT_PHASE`** | **`src/lib/ccs/auth.js`**, **`src/lib/ccs/cookiesHdr.js`** | Production-only pepper warning (**`NEXT_PHASE`**); **`Secure`** on session cookies when **`NODE_ENV === "production"`**. |
 
@@ -59,9 +59,9 @@ For a shorter overview, see the top sections of **[README.md](../README.md)**.
 | File | Responsibility |
 |------|----------------|
 | **`src/app/admin/layout.js`** | Layout wrapper for `/admin/*` subtree (minimal shell around admin routes). |
-| **`src/app/admin/page.js`** | **`ensureReady()`** (DB + DDL); **`bootstrapStatus()`** — if bootstrap needed, redirects to **`/admin/register`**; reads session cookie → **`requireStaff(token)`**; unauthenticated → **`/admin/login`**; renders **`<AdminConsole />`** or forbidden HTML. **`dynamic = "force-dynamic"`**. |
+| **`src/app/admin/page.js`** | **`ensureReady()`** (DB + DDL); reads session cookie → **`requireStaff(token)`**; unauthenticated → **`/admin/login`**; renders **`<AdminConsole />`** or forbidden HTML. **`dynamic = "force-dynamic"`**. |
 | **`src/app/admin/login/page.js`** | Admin sign-in UI (**`AdminLoginForm`**). |
-| **`src/app/admin/register/page.js`** | First admin / invite registration (**`AdminRegisterForm`**), used during bootstrap when no admins exist (or invite flow per server rules). |
+| **`src/app/admin/register/page.js`** | Informational access page (**`AdminRegisterForm`**); contains no registration form or database-dependent setup state. |
 
 ### API handlers
 
@@ -74,9 +74,11 @@ All **`src/app/api/**/route.js`** files implement Route Handlers: **`GET`**, **`
 | File | Responsibility |
 |------|----------------|
 | **`src/components/ccs-talks/routing/talksPaths.js`** | **URL grammar** for the catch-all route: **`SEGMENT_MAP`** (first path segment → internal `page` key), **`KNOWN_FIRST_SEGMENTS`**, **`validateTalksSlugSegments`** (404 server gate), **`parseTalksPathname`** (pathname → `{ page, profileHandle, postId, … }`), **`buildTalksPathname`** (app state → canonical URL), **`normalizeTalksPathname`**. |
-| **`src/components/ccs-talks/routing/TalksRouterSync.jsx`** | Keeps **`window`** URL and React **`page`** state aligned: listens to **`popstate`**, parses with **`parseTalksPathname`**, pushes history when the virtual **`page`** changes (**`history.pushState`**). |
+| **`src/components/ccs-talks/routing/TalksRouterSync.jsx`** | Loads data for the current pathname and migrates legacy hash links. It never writes asynchronous profile/post results back into navigation history; abandoned route loads cannot redirect the current screen. |
 
-Together, **`talksPaths.js`** decides what URLs exist; **`TalksRouterSync`** drives client navigation without full page reloads for internal view changes.
+Together, **`talksPaths.js`** defines valid URLs and **`AppState`** derives the current screen/post id directly from Next’s **`usePathname`**, including the first server render. **`navigateTalks.js`** uses Next’s native history integration: deliberate public navigation pushes an entry while redirects and legacy-link migration replace one. This keeps the public shell and session mounted across public routes and supports browser Back/Forward. Admin transitions continue to use their separate App Router pages.
+
+Session state comes from the server rather than a persisted boolean. Protected routes wait for the initial session result; account autosave and onboarding wait for the server account snapshot. Forum feeds load on screens that need them, never on login/register. Sidebar/navbar chrome stays outside lazy-screen Suspense boundaries. Run **`npm run build`** then **`npm run test:routing`** for production Next browser regression checks with intercepted synthetic API responses.
 
 ---
 
@@ -217,7 +219,7 @@ These modules are imported by **`route.js`** handlers and sometimes by admin/Tal
 
 | File | Responsibility |
 |------|----------------|
-| **`admin.js`** | Role constants (**`ROLE_*`**), **`requireStaff`** (401/403/banned gates), **`bootstrapStatus`** / **`countAdmins`** / **`registerAdminAccount`**, **`appendAudit`**, user admin (**`listUsers`**, **`getUserDetailById`**, **`setUserRole`**, **`setUserBadges`**, **`setUserStatus`**, **`setUserBanned`**, **`deleteUserCascade`**, **`patchUserProfileAsStaff`**), posts admin (**`listAllPosts`**, **`adminPinPost`**, **`adminEditPost`**, **`adminDeletePost`**), reports (**`staffListOpenReports`**, **`staffResolveForumReport`**), announcements/tickets (**`createAnnouncementAdmin`**, **`deleteAnnouncementAdmin`**, **`listTicketsAdmin`**, **`updateTicketStaff`**), site settings (**`getSiteSettings`**, **`setSiteSettings`**, **`DEFAULT_SITE_SETTINGS`**, **`getMergedProfileFieldOptions`**), CMS (**`saveLandingCms`**, **`getLandingCmsMerged`**, **`getPublicLandingBundle`**, **`listAnnouncementsPublic`**), dashboard **`getOverview`**, **`listAudit`**. Imports **`store`** helpers for overlaps (handles, inserts). |
+| **`admin.js`** | Role constants (**`ROLE_*`**), **`requireStaff`** (401/403/banned gates), **`countAdmins`** (public registration and browser bootstrap removed), **`appendAudit`**, user admin (**`listUsers`**, **`getUserDetailById`**, **`setUserRole`**, **`setUserBadges`**, **`setUserStatus`**, **`setUserBanned`**, **`deleteUserCascade`**, **`patchUserProfileAsStaff`**), posts admin (**`listAllPosts`**, **`adminPinPost`**, **`adminEditPost`**, **`adminDeletePost`**), reports (**`staffListOpenReports`**, **`staffResolveForumReport`**), announcements/tickets (**`createAnnouncementAdmin`**, **`deleteAnnouncementAdmin`**, **`listTicketsAdmin`**, **`updateTicketStaff`**), site settings (**`getSiteSettings`**, **`setSiteSettings`**, **`DEFAULT_SITE_SETTINGS`**, **`getMergedProfileFieldOptions`**), CMS (**`saveLandingCms`**, **`getLandingCmsMerged`**, **`getPublicLandingBundle`**, **`listAnnouncementsPublic`**), dashboard **`getOverview`**, **`listAudit`**. Imports **`store`** helpers for overlaps (handles, inserts). |
 
 ### Outbound mail
 
@@ -289,7 +291,7 @@ All under **`src/app/api/admin/`**. Handlers **`requireStaff(token)`** (and some
 
 | File | Methods | Handles |
 |------|---------|---------|
-| **`bootstrap/route.js`** | `GET` | **`bootstrapStatus()`** snapshot for SPA/admin pages. |
+| **`bootstrap/route.js`** | `GET` | Constant disabled enrollment capabilities; no database/account counts. |
 | **`overview/route.js`** | `GET` | **`getOverview`** dashboard KPIs. |
 | **`audit/route.js`** | `GET` | **`listAudit`**. |
 | **`site/route.js`** | `GET`, `PATCH` | **`getSiteSettings`**, **`setSiteSettings`** (registration flags, **`profileFieldOptions`**, **`bannedWords`**, badge registry patches, etc.). |
@@ -304,7 +306,7 @@ All under **`src/app/api/admin/`**. Handlers **`requireStaff(token)`** (and some
 | **`tickets/[ticketId]/route.js`** | `PATCH` | **`updateTicketStaff`**. |
 | **`reports/route.js`** | `GET` | **`staffListOpenReports`**. |
 | **`reports/[reportId]/route.js`** | `PATCH` | **`staffResolveForumReport`**. |
-| **`auth/register/route.js`** | `POST` | **`registerAdminAccount`** (invite/bootstrap path). |
+| **`auth/register/route.js`** | `POST` | Always returns 403; no credential processing, DB access or session creation. |
 
 ---
 

@@ -181,22 +181,7 @@ export function TicketsScreen({ onNeedSignIn }) {
                   </span>
                 </div>
                 <div style={{ marginTop: 8, fontSize: 13, color: tokens.textMuted, whiteSpace: "pre-wrap" }}>{t.body}</div>
-                {t.staffReply ? (
-                  <div
-                    style={{
-                      marginTop: 12,
-                      padding: 10,
-                      borderRadius: 12,
-                      border: `1px solid ${tokens.border}`,
-                      background: tokens.surfaceAlt,
-                      fontSize: 13,
-                      whiteSpace: "pre-wrap",
-                    }}
-                  >
-                    <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.1em", color: tokens.accent }}>STAFF REPLY</div>
-                    <div style={{ marginTop: 6, color: tokens.text }}>{t.staffReply}</div>
-                  </div>
-                ) : null}
+                {(t.messages?.length ? t.messages : t.staffReply ? [{id:"legacy",body:t.staffReply,authorId:"legacy_staff",createdAt:t.updatedAt}] : []).map(entry=><div key={entry.id} style={{marginTop:12,padding:12,border:`1px solid ${tokens.border}`,borderRadius:10}}><p style={{fontSize:11,color:tokens.textMuted}}>{entry.authorId==="legacy_staff" ? "Previous staff reply" : "Staff reply"} · {new Date(Number(entry.createdAt)).toLocaleString()}</p><p style={{whiteSpace:"pre-wrap",color:tokens.text}}>{entry.body}</p></div>)}
                 <div style={{ marginTop: 8, fontSize: 11, color: tokens.textSubtle }}>
                   Updated {new Date(t.updatedAt).toLocaleString()}
                 </div>

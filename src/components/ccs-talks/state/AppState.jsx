@@ -15,25 +15,36 @@ import { DEFAULT_PROFILE } from "../config/appConfig";
 import { useLocalStorageState } from "./useLocalStorageState";
 import { getThemeTokens } from "../theme";
 import { showToast } from "./toastBus";
+import { usePathname } from "next/navigation";
+import { buildTalksPathname, parseTalksPathname } from "../routing/talksPaths";
+import { navigateTalks } from "../routing/navigateTalks";
 
 const AppStateContext = createContext(null);
 
 export function AppStateProvider({ children }) {
   const [profile, setProfile] = useLocalStorageState("ccs.profile.v1", DEFAULT_PROFILE);
   const [feedUsersById, setFeedUsersById] = useState({});
-  const [page, setPage] = useState("landing");
-  const [posts, setPosts] = useLocalStorageState("ccs.posts.v1", []);
-  const [commentsByPostId, setCommentsByPostId] = useLocalStorageState("ccs.comments.v1", {});
+  const pathname = usePathname() || "/";
+  const route = useMemo(() => parseTalksPathname(pathname), [pathname]);
+  const page = route.page;
+  const setPage = useCallback((nextPage, options) => {
+    const path = buildTalksPathname({ page: nextPage });
+    if (path) navigateTalks(path, options);
+  }, []);
+  const [posts, setPosts] = useState([]);
+  const [commentsByPostId, setCommentsByPostId] = useState({});
   const [activities, setActivities] = useLocalStorageState("ccs.activities.v1", []);
   const [friends, setFriends] = useLocalStorageState("ccs.friends.v1", CCS_DEFAULT_FRIENDS);
   const [subs, setSubs] = useLocalStorageState("ccs.subs.v1", CCS_DEFAULT_SUBS);
   const [prefs, setPrefs] = useLocalStorageState("ccs.prefs.v1", CCS_DEFAULT_PREFS);
-  const [isAuthed, setIsAuthed] = useLocalStorageState("ccs.authed.v1", false);
+  const [isAuthed, setIsAuthed] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [accountReady, setAccountReady] = useState(false);
   /** Server-truth role for the current viewer; defaults to "student" until /api/auth/me responds. */
   const [role, setRole] = useState("student");
   const [accountEmail, setAccountEmail] = useState("");
   /** When set, Profile screen shows this user's public card (read-only) until cleared. */
-  const [profileVisitUserId, setProfileVisitUserId] = useState(null);
+  const [loadedProfileId, setProfileVisitUserId] = useState(null);
   /** Friend id order for the profile being visited (from server); cleared with visit reset. */
   const [visitedProfileFriends, setVisitedProfileFriends] = useState(null);
   /** Milliseconds epoch when username edit is allowed again (server: `usernameCooldownUntil`). */
@@ -43,11 +54,17 @@ export function AppStateProvider({ children }) {
   /** Forum post tag label → accent hex from landing CMS (`tagColors` in JSON). */
   const [tagColors, setTagColors] = useState({});
   /** Deep-link post screen (`/p/{id}`). */
-  const [activePostId, setActivePostId] = useState(null);
+  const activePostId = route.postId || null;
   /** When set, post detail shows “not found” for this id (URL stays `/p/…`). */
   const [postNotFoundId, setPostNotFoundId] = useState(null);
   /** When set, profile screen shows “user not found” for this handle. */
-  const [profileNotFoundHandle, setProfileNotFoundHandle] = useState(null);
+  const [missingProfileHandle, setProfileNotFoundHandle] = useState(null);
+  const [profileLoadError, setProfileRouteError] = useState("");
+  const [resolvedProfileHandle, setResolvedProfileHandle] = useState(null);
+  const profileRouteLoading = !!route.profileHandle && resolvedProfileHandle !== route.profileHandle;
+  const profileVisitUserId = route.profileHandle && !profileRouteLoading ? loadedProfileId : null;
+  const profileNotFoundHandle = route.profileHandle === missingProfileHandle ? missingProfileHandle : null;
+  const profileRouteError = route.profileHandle && !profileRouteLoading ? profileLoadError : "";
 
   const applyLandingExtras = useCallback((d) => {
     if (d?.badgeColors && typeof d.badgeColors === "object") setBadgeColors(d.badgeColors);
@@ -60,22 +77,27 @@ export function AppStateProvider({ children }) {
   const forumActiveTagRef = useRef("All");
   const forumSearchSeedRef = useRef({ q: "", tag: "" });
   const postsRef = useRef(posts);
-  postsRef.current = posts;
   const pageRef = useRef(page);
-  pageRef.current = page;
   const activePostIdRef = useRef(activePostId);
-  activePostIdRef.current = activePostId;
   const commentsByPostIdRef = useRef(commentsByPostId);
-  commentsByPostIdRef.current = commentsByPostId;
+  useEffect(() => {
+    postsRef.current = posts;
+    pageRef.current = page;
+    activePostIdRef.current = activePostId;
+    commentsByPostIdRef.current = commentsByPostId;
+  }, [posts, page, activePostId, commentsByPostId]);
   const [onlineByUserId, setOnlineByUserId] = useState({});
 
   /** Skip first debounced PATCH after we just applied server snapshot (prevents PATCH loop). */
   const lastSyncedExtrasRef = useRef("");
+  const sessionEpochRef = useRef(0);
 
   const hydrateAccountFromServer = useCallback(
     (me) => {
       if (!me?.profile) return;
       setIsAuthed(true);
+      setAuthReady(true);
+      setAccountReady(true);
       setProfile((p) => ({ ...DEFAULT_PROFILE, ...p, ...me.profile }));
       setPrefs(normalizePrefs(me.prefs));
       setFriends(normalizeFriends(me.friends));
@@ -96,14 +118,9 @@ export function AppStateProvider({ children }) {
 
   const persistFullProfile = useCallback(
     async (patch) => {
-      let merged = null;
-      setProfile((p) => {
-        merged = { ...DEFAULT_PROFILE, ...p, ...(patch && typeof patch === "object" ? patch : {}) };
-        return merged;
-      });
-      if (!isAuthed || !merged) return;
+      if (!isAuthed) return false;
       try {
-        const out = await api.patchProfile(merged);
+        const out = await api.patchProfile(patch);
         if (out?.profile) {
           setProfile((p) => ({ ...DEFAULT_PROFILE, ...p, ...out.profile }));
           setFeedUsersById((prev) => ({
@@ -114,6 +131,7 @@ export function AppStateProvider({ children }) {
         if (typeof out?.usernameCooldownUntil === "number" || out?.usernameCooldownUntil === null) {
           setUsernameCooldownUntil(out.usernameCooldownUntil);
         }
+        return true;
       } catch (e) {
         if (e?.status === 429) {
           const na = e?.data?.nextAllowedAt;
@@ -123,6 +141,7 @@ export function AppStateProvider({ children }) {
         } else if (e?.status === 409) window.alert("That username is already taken.");
         else if (e?.status === 413) window.alert(e.message || "Image too large to save.");
         else console.warn("[ccs] persistFullProfile", e);
+        return false;
       }
     },
     [isAuthed, setProfile]
@@ -139,6 +158,7 @@ export function AppStateProvider({ children }) {
         feedNextCursorRef.current = nc;
         setFeedNextCursor(nc);
       } catch (e) {
+        if(e?.status===401){setPosts([]);setCommentsByPostId({});setFeedUsersById({});}
         showToast(e?.message || "Couldn’t refresh the feed.", "error");
       }
     },
@@ -183,7 +203,7 @@ export function AppStateProvider({ children }) {
       tag: String(tag || "").trim(),
     };
     setPage("search");
-  }, []);
+  }, [setPage]);
 
   const peekForumSearchSeed = useCallback(() => ({ ...forumSearchSeedRef.current }), []);
 
@@ -204,7 +224,10 @@ export function AppStateProvider({ children }) {
   }, [setPosts]);
 
   const applySessionProfile = useCallback(({ name, profile: nextProfile }) => {
+    sessionEpochRef.current += 1;
     setIsAuthed(true);
+    setAuthReady(true);
+    setAccountReady(false);
     if (nextProfile) setProfile((p) => ({ ...p, ...nextProfile }));
     else if (name) setProfile((p) => ({ ...p, name }));
   }, [setProfile, setIsAuthed]);
@@ -216,53 +239,39 @@ export function AppStateProvider({ children }) {
   const signOut = async () => {
     try {
       await api.logoutAccount();
-    } catch {
-      /* ignore network errors */
+    } catch(error) {
+      showToast(error?.message || "Could not sign out. Please retry.","error");return false;
     }
+    setPosts([]);setCommentsByPostId({});setFeedUsersById({});
+    sessionEpochRef.current += 1;
     setIsAuthed(false);
+    setAccountReady(false);
     setRole("student");
     setAccountEmail("");
     setUsernameCooldownUntil(null);
+    return true;
   };
 
-  /** Bootstrap server feed / session cookie when running inside Next.js. */
+  // Content is scoped to this tab's authorized API reads, not hydrated from
+  // a previous account's persistent cache after guest visibility changes.
+  useEffect(()=>{try{localStorage.removeItem("ccs.authed.v1");localStorage.removeItem("ccs.posts.v1");localStorage.removeItem("ccs.comments.v1");}catch{}},[]);
+
+  /** Bootstrap session and shared public metadata once for this mounted shell. */
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     let cancelled = false;
+    const epoch = sessionEpochRef.current;
 
     async function bootstrap() {
-      try {
-        const feed = await api.getPosts({ limit: 30 });
-
-        let me = null;
-        try {
-          me = await api.getMe();
-        } catch (e) {
-          if (e?.status === 401) setIsAuthed(false);
-          me = null;
-        }
-
-        if (cancelled) return;
-
-        if (Array.isArray(feed.posts)) setPosts(feed.posts);
-        if (feed.users && typeof feed.users === "object") setFeedUsersById((prev) => ({ ...prev, ...feed.users }));
-        const nc = feed.nextCursor != null && feed.nextCursor !== undefined ? feed.nextCursor : null;
-        feedNextCursorRef.current = nc;
-        setFeedNextCursor(nc);
-        forumActiveTagRef.current = "All";
-
-        if (me?.profile) hydrateAccountFromServer(me);
-
-        try {
-          const ld = await api.getLanding();
-          if (!cancelled) applyLandingExtras(ld);
-        } catch {
-          /* keep defaults */
-        }
-      } catch {
-        // Offline / SSR mismatch — defaults + local cache stay authoritative.
-      }
+      await Promise.allSettled([
+        api.getMe().then(me => {
+          if (!cancelled && epoch === sessionEpochRef.current && me?.profile) hydrateAccountFromServer(me);
+        }).catch(error => {
+          if (!cancelled && epoch === sessionEpochRef.current && error?.status === 401) setIsAuthed(false);
+        }).finally(() => { if (!cancelled && epoch === sessionEpochRef.current) setAuthReady(true); }),
+        api.getLanding().then(data => { if (!cancelled) applyLandingExtras(data); }),
+      ]);
     }
 
     void bootstrap();
@@ -271,6 +280,12 @@ export function AppStateProvider({ children }) {
       cancelled = true;
     };
   }, [setPosts, setIsAuthed, hydrateAccountFromServer, applyLandingExtras]);
+
+  // The forum owns its tag-specific feed load; detail routes load one post.
+  // Secondary screens need a feed only when opened, never on login/register.
+  useEffect(() => {
+    if (["profile", "bookmarks", "activities", "subs"].includes(page) && authReady) void refreshFeed();
+  }, [page, authReady, refreshFeed]);
 
   /** Light presence pings while signed in — other clients can subscribe via `/api/presence`. */
   useEffect(() => {
@@ -339,7 +354,7 @@ export function AppStateProvider({ children }) {
 
   /** When signed in, persist prefs · subs · activities (friends use `/api/friends`). */
   useEffect(() => {
-    if (!isAuthed || typeof window === "undefined") return undefined;
+    if (!isAuthed || !accountReady || typeof window === "undefined") return undefined;
     const snap = JSON.stringify({ prefs, subs, activities });
     if (snap === lastSyncedExtrasRef.current) return undefined;
     const t = window.setTimeout(() => {
@@ -353,7 +368,7 @@ export function AppStateProvider({ children }) {
       })();
     }, 1000);
     return () => window.clearTimeout(t);
-  }, [isAuthed, prefs, subs, activities]);
+  }, [isAuthed, accountReady, prefs, subs, activities]);
 
   // Apply mode-specific css vars to <body> so any tailwind/utility falls back nicely
   useEffect(() => {
@@ -362,23 +377,6 @@ export function AppStateProvider({ children }) {
     document.body.style.background = tokens.appBg;
     document.body.style.color = tokens.text;
   }, [prefs.mode]);
-
-  useEffect(() => {
-    if (page !== "profile") {
-      setProfileVisitUserId(null);
-      setVisitedProfileFriends(null);
-    }
-  }, [page]);
-
-  const prevPageRef = useRef(page);
-  useEffect(() => {
-    const prev = prevPageRef.current;
-    prevPageRef.current = page;
-    if (prev === "post" && page !== "post") {
-      setActivePostId(null);
-      setPostNotFoundId(null);
-    }
-  }, [page]);
 
   const users = useMemo(() => {
     const r = role || "student";
@@ -443,10 +441,11 @@ export function AppStateProvider({ children }) {
   );
 
   const fetchAndMergeVisitByHandle = useCallback(
-    (handle) => {
+    (handle, isCurrent = () => true) => {
       const h = String(handle || "").trim();
       if (!h) return Promise.resolve(null);
       return api.getVisitProfileByHandle(h).then((bundle) => {
+        if (!isCurrent()) return null;
         if (!bundle?.profile?.id) return null;
         applyVisitProfileBundle(bundle);
         return bundle;
@@ -457,17 +456,23 @@ export function AppStateProvider({ children }) {
 
   const visitUserProfile = useCallback(
     (userId) => {
-      if (!userId) return;
-      const id = String(userId);
-      setProfileNotFoundHandle(null);
-      setProfileVisitUserId(id);
-      setVisitedProfileFriends(null);
-      setPage("profile");
-      void fetchAndMergeVisit(id).catch((e) => {
-        showToast(e?.message || "Couldn’t load this profile.", "error");
-      });
+      const id = String(userId || "").trim();
+      if (!id) return;
+      const handle = users[id]?.handle;
+      if (handle) {
+        navigateTalks(`/profile/${encodeURIComponent(handle)}`);
+        return;
+      }
+      // Some relationship lists only have ids. Resolve once before opening a
+      // shareable route; a late response must not undo a newer navigation.
+      const from = window.location.href;
+      void fetchAndMergeVisit(id).then(bundle => {
+        if (window.location.href === from && bundle?.profile?.handle) {
+          navigateTalks(`/profile/${encodeURIComponent(bundle.profile.handle)}`);
+        }
+      }).catch(e => showToast(e?.message || "Couldn’t load this profile.", "error"));
     },
-    [setPage, fetchAndMergeVisit]
+    [users, fetchAndMergeVisit]
   );
 
   const reloadVisitedProfile = useCallback(() => {
@@ -480,29 +485,23 @@ export function AppStateProvider({ children }) {
     setProfileVisitUserId(null);
     setVisitedProfileFriends(null);
     setProfileNotFoundHandle(null);
-    if (typeof window !== "undefined" && /^#profile@/i.test(window.location.hash)) {
-      const path = `${window.location.pathname}${window.location.search || ""}`;
-      window.history.replaceState(null, "", path);
-    }
+    setResolvedProfileHandle(null);
   }, []);
 
   const openPost = useCallback((postId) => {
     const id = String(postId || "").trim();
     if (!id) return;
-    setPostNotFoundId(null);
-    setActivePostId(id);
-    setPage("post");
-  }, [setPage]);
+    navigateTalks(`/p/${encodeURIComponent(id)}`);
+  }, []);
 
   const hydratePostFromServer = useCallback(
-    async (postId) => {
+    async (postId, isCurrent = () => true) => {
       const id = String(postId || "").trim();
       if (!id) return;
-      setActivePostId(id);
       setPostNotFoundId(null);
-      setPage("post");
       try {
         const data = await api.getPost(id);
+        if (!isCurrent()) return;
         if (data?.post) {
           mergeFeedUsers(data.users);
           upsertFeedPost(data.post);
@@ -511,10 +510,10 @@ export function AppStateProvider({ children }) {
           setPostNotFoundId(id);
         }
       } catch {
-        setPostNotFoundId(id);
+        if (isCurrent()) setPostNotFoundId(id);
       }
     },
-    [mergeFeedUsers, upsertFeedPost, setPage]
+    [mergeFeedUsers, upsertFeedPost]
   );
 
   const addActivity = (a) => {
@@ -543,21 +542,13 @@ export function AppStateProvider({ children }) {
   };
 
   const updatePost = async (postId, patch) => {
-    const idStr = String(postId);
-    setPosts((ps) => ps.map((p) => (String(p.id) === idStr ? { ...p, ...patch } : p)));
-    addActivity({ type: "edit_post", postId: idStr, userId: profile.id });
-
-    if (patch?.content != null && isAuthed) {
-      try {
-        const out = await api.patchPost(postId, String(patch.content));
-        if (out?.post) upsertFeedPost(out.post);
-      } catch (e) {
-        if (typeof window !== "undefined" && e?.status === 413) {
-          window.alert(String(e.message || "Edited post exceeds the maximum length."));
-        }
-        /* Moderator edits on other authors' posts may stay local-only on other failures. */
-      }
-    }
+    if (!isAuthed || typeof patch?.content!=="string") return false;
+    try {
+      const out=await api.patchPost(postId,patch.content);
+      if(out?.post)upsertFeedPost(out.post);
+      addActivity({type:"edit_post",postId:String(postId),userId:profile.id});
+      return true;
+    }catch(error){showToast(error?.message || "Could not save this post.","error");return false;}
   };
 
   const toggleBookmark = async (postId) => {
@@ -778,25 +769,7 @@ export function AppStateProvider({ children }) {
 
   const tokens = useMemo(() => getThemeTokens(prefs.mode), [prefs.mode]);
 
-  /** See `TalksRouterSync`: block state→URL push while pathname hydration (incl. async profile fetch) is in flight. */
-  const talksUrlPushDeferDepthRef = useRef(0);
-  const talksPathnameHydration = useMemo(
-    () => ({
-      begin: () => {
-        talksUrlPushDeferDepthRef.current += 1;
-      },
-      end: () => {
-        queueMicrotask(() => {
-          talksUrlPushDeferDepthRef.current = Math.max(0, talksUrlPushDeferDepthRef.current - 1);
-        });
-      },
-      shouldDeferTalksPush: () => talksUrlPushDeferDepthRef.current > 0,
-    }),
-    []
-  );
-
-  const value = useMemo(
-    () => ({
+  const value = {
       page,
       setPage,
       profileVisitUserId,
@@ -804,7 +777,10 @@ export function AppStateProvider({ children }) {
       setProfileVisitUserId,
       profileNotFoundHandle,
       setProfileNotFoundHandle,
-      talksPathnameHydration,
+      profileRouteLoading,
+      profileRouteError,
+      setProfileRouteError,
+      setResolvedProfileHandle,
       visitedProfileFriends,
       visitUserProfile,
       reloadVisitedProfile,
@@ -831,7 +807,6 @@ export function AppStateProvider({ children }) {
       sharePost,
       shareComment,
       activePostId,
-      setActivePostId,
       postNotFoundId,
       openPost,
       hydratePostFromServer,
@@ -855,6 +830,8 @@ export function AppStateProvider({ children }) {
       tokens,
       // auth
       isAuthed,
+      authReady,
+      accountReady,
       role,
       accountEmail,
       isStaff: role === "admin" || role === "moderator",
@@ -875,54 +852,7 @@ export function AppStateProvider({ children }) {
       pinPost,
       banUser,
       unbanUser,
-    }),
-    [
-      page,
-      profileVisitUserId,
-      fetchAndMergeVisitByHandle,
-      profileNotFoundHandle,
-      talksPathnameHydration,
-      visitedProfileFriends,
-      visitUserProfile,
-      reloadVisitedProfile,
-      resetProfileVisit,
-      profile,
-      users,
-      posts,
-      commentsByPostId,
-      activities,
-      friends,
-      subs,
-      prefs,
-      tokens,
-      isAuthed,
-      role,
-      accountEmail,
-      usernameCooldownUntil,
-      refreshFeed,
-      reloadForumFeed,
-      loadMoreFeedPosts,
-      feedNextCursor,
-      publishPost,
-      loadCommentsFromServer,
-      shareComment,
-      activePostId,
-      postNotFoundId,
-      openPost,
-      hydratePostFromServer,
-      hydrateAccountFromServer,
-      persistFullProfile,
-      badgeColors,
-      tagColors,
-      applyLandingExtras,
-      onlineByUserId,
-      openForumSearchWith,
-      peekForumSearchSeed,
-      clearForumSearchSeed,
-      updateComment,
-      removeComment,
-    ]
-  );
+  };
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }
 

@@ -1,3 +1,5 @@
+import { adminListPage } from "@/lib/ccs/adminListPage";
+import { staffRoute } from "@/lib/ccs/staffRoute";
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
@@ -5,20 +7,17 @@ import { createAnnouncementAdmin, listAnnouncementsPublic, requireStaff } from "
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  await ensureReady();
-  const token = await readSessionTokenFromCookies();
-  const gate = await requireStaff(token);
-  if (gate.error) return NextResponse.json({ error: gate.error }, { status: gate.status });
-
-  const announcements = await listAnnouncementsPublic();
-  return NextResponse.json({ announcements });
+async function GETHandler(request) {
+  const token=await readSessionTokenFromCookies();
+  const gate=await requireStaff(token);
+  if (gate.error) return NextResponse.json({error:gate.error},{status:gate.status});
+  return NextResponse.json(await adminListPage("announcements",new URL(request.url).searchParams));
 }
 
-export async function POST(request) {
+async function POSTHandler(request) {
   await ensureReady();
   const token = await readSessionTokenFromCookies();
-  const gate = await requireStaff(token, { adminOnly: true });
+  const gate = await requireStaff(token, { adminOnly: true, recentAuth: true });
   if (gate.error) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   let body = {};
@@ -32,3 +31,6 @@ export async function POST(request) {
   if (out?.error) return NextResponse.json({ error: out.error }, { status: out.status || 400 });
   return NextResponse.json(out);
 }
+
+export const GET = staffRoute(GETHandler);
+export const POST = staffRoute(POSTHandler);

@@ -1,3 +1,4 @@
+import { staffRoute } from "@/lib/ccs/staffRoute";
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
@@ -5,7 +6,7 @@ import { patchAccountBundles, resolveViewerFromSession } from "@/lib/ccs/store";
 
 export const dynamic = "force-dynamic";
 
-export async function PATCH(request) {
+async function PATCHHandler(request) {
   await ensureReady();
   const token = await readSessionTokenFromCookies();
 
@@ -32,3 +33,5 @@ export async function PATCH(request) {
 
   return NextResponse.json(out.wire);
 }
+
+export const PATCH = staffRoute(PATCHHandler);

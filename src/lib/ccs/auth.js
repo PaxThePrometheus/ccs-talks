@@ -1,4 +1,7 @@
 import crypto from "node:crypto";
+import { promisify } from "node:util";
+
+const scryptAsync = promisify(crypto.scrypt);
 
 const SESSION_COOKIE = "ccs_session";
 const PEPPER = process.env.CCS_AUTH_PEPPER || "";
@@ -28,13 +31,13 @@ export function hashPassword(password, saltHex) {
   return hash.toString("hex");
 }
 
-export function verifyPassword(password, saltHex, expectedHashHex) {
+export async function verifyPassword(password, saltHex, expectedHashHex) {
   try {
     if (typeof saltHex !== "string" || typeof expectedHashHex !== "string") return false;
     if (!saltHex || !expectedHashHex) return false;
 
-    const attempt = hashPassword(password, saltHex);
-    const a = Buffer.from(attempt, "hex");
+    if (typeof password !== "string" || password.length > 1024) return false;
+    const a = await scryptAsync(PEPPER + password, Buffer.from(saltHex, "hex"), 64);
     const b = Buffer.from(expectedHashHex, "hex");
     if (a.length === 0 || b.length === 0) return false;
     if (a.length !== b.length) return false;

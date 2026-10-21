@@ -1,3 +1,5 @@
+import { editableProfilePatch } from "@/lib/ccs/profileFields.mjs";
+
 async function jsonFetch(url, opts = {}) {
   const res = await fetch(url, {
     credentials: "include",
@@ -64,8 +66,13 @@ export function getMe() {
 }
 
 /** Public landing CMS + live stats (guests OK). */
+let landingPending = null;
+let landingSnapshot = null;
+let landingSnapshotAt = 0;
 export function getLanding() {
-  return fetch("/api/landing", { cache: "no-store" }).then(async (res) => {
+  if (landingSnapshot && Date.now() - landingSnapshotAt < 10_000) return Promise.resolve(landingSnapshot);
+  if (landingPending) return landingPending;
+  landingPending = fetch("/api/landing", { cache: "no-store" }).then(async (res) => {
     const text = await res.text();
     let data = {};
     try {
@@ -79,7 +86,10 @@ export function getLanding() {
       throw err;
     }
     return data;
-  });
+  }).then(data => {
+    landingSnapshot = data; landingSnapshotAt = Date.now(); return data;
+  }).finally(() => { landingPending = null; });
+  return landingPending;
 }
 
 export function registerAccount({ email, password, name, handle }) {
@@ -92,8 +102,8 @@ export function checkHandleAvailable(h) {
   return jsonFetch(`/api/auth/handle-check?${qs.toString()}`, { method: "GET" });
 }
 
-export function loginAccount({ email, password }) {
-  return jsonFetch("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+export function loginAccount({ email, password, code }) {
+  return jsonFetch("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password, code }) });
 }
 
 export function logoutAccount() {
@@ -180,7 +190,7 @@ export function deleteComment(postId, commentId) {
 }
 
 export function patchProfile(patch) {
-  return jsonFetch("/api/profile", { method: "PATCH", body: JSON.stringify(patch) });
+  return jsonFetch("/api/profile", { method: "PATCH", body: JSON.stringify(editableProfilePatch(patch)) });
 }
 
 /** Persist prefs · friends · subs · activities (and optional nested profile merges via same route). */

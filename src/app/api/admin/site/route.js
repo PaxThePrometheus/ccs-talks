@@ -1,3 +1,4 @@
+import { staffRoute } from "@/lib/ccs/staffRoute";
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
@@ -5,7 +6,7 @@ import { getSiteSettings, requireStaff, setSiteSettings } from "@/lib/ccs/admin"
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+async function GETHandler() {
   await ensureReady();
   const token = await readSessionTokenFromCookies();
   const gate = await requireStaff(token);
@@ -15,10 +16,10 @@ export async function GET() {
   return NextResponse.json({ settings });
 }
 
-export async function PATCH(request) {
+async function PATCHHandler(request) {
   await ensureReady();
   const token = await readSessionTokenFromCookies();
-  const gate = await requireStaff(token, { adminOnly: true });
+  const gate = await requireStaff(token, { adminOnly: true, recentAuth: true });
   if (gate.error) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   let body = {};
@@ -31,3 +32,6 @@ export async function PATCH(request) {
   const settings = await setSiteSettings(gate.row.id, body);
   return NextResponse.json({ settings });
 }
+
+export const GET = staffRoute(GETHandler);
+export const PATCH = staffRoute(PATCHHandler);

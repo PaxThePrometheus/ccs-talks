@@ -1,3 +1,5 @@
+import { objectBody, textField } from "@/lib/ccs/requestValidation.mjs";
+import { staffRoute } from "@/lib/ccs/staffRoute";
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
@@ -6,7 +8,7 @@ import { fetchSinglePostEnvelope, resolveViewerFromSession, updatePostBody } fro
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request, ctx) {
+async function GETHandler(_request, ctx) {
   await ensureReady();
   const { postId } = await ctx.params;
   const token = await readSessionTokenFromCookies();
@@ -19,7 +21,7 @@ export async function GET(_request, ctx) {
   return NextResponse.json({ post: env.post, users: env.users });
 }
 
-export async function PATCH(request, ctx) {
+async function PATCHHandler(request, ctx) {
   await ensureReady();
   const { postId } = await ctx.params;
   const token = await readSessionTokenFromCookies();
@@ -30,7 +32,8 @@ export async function PATCH(request, ctx) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
-  const content = String(payload.content ?? "").trim();
+  objectBody(payload,["content"]);
+  const content = textField(payload.content,"Post",12800,{empty:false});
   if (!content) return NextResponse.json({ error: "Content is empty." }, { status: 400 });
   if (content.length > CCS_POST_BODY_MAX_CHARS) {
     return NextResponse.json(
@@ -55,3 +58,6 @@ export async function PATCH(request, ctx) {
 
   return NextResponse.json(updated);
 }
+
+export const GET = staffRoute(GETHandler);
+export const PATCH = staffRoute(PATCHHandler);

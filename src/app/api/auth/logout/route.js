@@ -7,12 +7,16 @@ import { revokeSessionToken } from "@/lib/ccs/store";
 export const dynamic = "force-dynamic";
 
 export async function POST() {
-  await ensureReady();
-  const token = await readSessionTokenFromCookies();
-
-  await revokeSessionToken(token);
-
-  const res = NextResponse.json({ ok: true });
-  clearSessionCookie(res);
-  return res;
+  try {
+    const token = await readSessionTokenFromCookies();
+    if (token) {
+      await ensureReady();
+      await revokeSessionToken(token);
+    }
+    const res = NextResponse.json({ ok: true });
+    clearSessionCookie(res);
+    return res;
+  } catch {
+    return NextResponse.json({ error: "Could not sign out. Please retry." }, { status: 503 });
+  }
 }

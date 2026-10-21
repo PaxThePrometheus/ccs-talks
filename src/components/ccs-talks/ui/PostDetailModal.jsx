@@ -56,9 +56,8 @@ export function PostDetailModal({ open, postId, onClose }) {
     setEditText(post.content);
   };
 
-  const handleSaveEdit = () => {
-    updatePost(post.id, { content: editText });
-    setEditing(false);
+  const handleSaveEdit = async () => {
+    if(await updatePost(post.id, { content: editText }))setEditing(false);
   };
 
   const submitComment = () => {

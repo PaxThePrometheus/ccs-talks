@@ -24,7 +24,6 @@ export function ProfileScreen() {
     profile,
     profileVisitUserId,
     visitedProfileFriends,
-    resetProfileVisit,
     reloadVisitedProfile,
     posts,
     users,
@@ -125,7 +124,6 @@ export function ProfileScreen() {
             <button
               type="button"
               onClick={() => {
-                resetProfileVisit();
                 setPage("forum");
               }}
               style={headerBtn(undefined, tokens)}
@@ -135,7 +133,6 @@ export function ProfileScreen() {
             <button
               type="button"
               onClick={() => {
-                resetProfileVisit();
                 setPage("search");
               }}
               style={headerBtn(undefined, tokens)}
@@ -175,8 +172,7 @@ export function ProfileScreen() {
             <button
               type="button"
               onClick={() => {
-                resetProfileVisit();
-                if (isGuestPeek) setPage("forum");
+                setPage(isGuestPeek ? "forum" : "profile");
               }}
               style={headerBtn(undefined, tokens)}
             >
@@ -254,8 +250,7 @@ export function ProfileScreen() {
             <button
               type="button"
               onClick={() => {
-                resetProfileVisit();
-                if (isGuestPeek) setPage("forum");
+                setPage(isGuestPeek ? "forum" : "profile");
               }}
               style={{
                 border: `1px solid ${tokens.border}`,

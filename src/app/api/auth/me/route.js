@@ -1,3 +1,4 @@
+import { staffRoute } from "@/lib/ccs/staffRoute";
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
@@ -5,7 +6,7 @@ import { getAccountWire } from "@/lib/ccs/store";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+async function GETHandler() {
   await ensureReady();
   const token = await readSessionTokenFromCookies();
 
@@ -14,3 +15,5 @@ export async function GET() {
 
   return NextResponse.json(wire);
 }
+
+export const GET=staffRoute(GETHandler);

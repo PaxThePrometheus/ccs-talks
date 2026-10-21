@@ -1,3 +1,5 @@
+import { objectBody, textField } from "@/lib/ccs/requestValidation.mjs";
+import { staffRoute } from "@/lib/ccs/staffRoute";
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
@@ -5,7 +7,7 @@ import { deleteCommentEnvelope, resolveViewerFromSession, updateCommentEnvelope 
 
 export const dynamic = "force-dynamic";
 
-export async function PATCH(request, ctx) {
+async function PATCHHandler(request, ctx) {
   await ensureReady();
   const { postId, commentId } = await ctx.params;
   const token = await readSessionTokenFromCookies();
@@ -19,7 +21,8 @@ export async function PATCH(request, ctx) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const text = String(body.text ?? "");
+  objectBody(body,["text"]);
+  const text = textField(body.text,"Comment",8000,{empty:false});
   const out = await updateCommentEnvelope(postId, commentId, viewer.id, text);
 
   if (out?.empty) return NextResponse.json({ error: "Comment text is empty." }, { status: 400 });
@@ -30,7 +33,7 @@ export async function PATCH(request, ctx) {
   return NextResponse.json(out);
 }
 
-export async function DELETE(_request, ctx) {
+async function DELETEHandler(_request, ctx) {
   await ensureReady();
   const { postId, commentId } = await ctx.params;
   const token = await readSessionTokenFromCookies();
@@ -45,3 +48,6 @@ export async function DELETE(_request, ctx) {
 
   return NextResponse.json(out);
 }
+
+export const PATCH = staffRoute(PATCHHandler);
+export const DELETE = staffRoute(DELETEHandler);

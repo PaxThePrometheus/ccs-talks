@@ -1,3 +1,5 @@
+import { enforceGuestRead } from "@/lib/ccs/contentPolicy";
+import { staffRoute } from "@/lib/ccs/staffRoute";
 import { NextResponse } from "next/server";
 import { readSessionTokenFromCookies } from "@/lib/ccs/cookiesRead";
 import { ensureReady } from "@/lib/ccs/drizzle-client";
@@ -10,8 +12,11 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request) {
+async function GETHandler(request) {
   await ensureReady();
+  const token=await readSessionTokenFromCookies();
+  const viewer=await resolveViewerFromSession(token);
+  await enforceGuestRead(viewer?.id);
   const url = new URL(request.url);
   const visitUserId = url.searchParams.get("visitUserId");
   const visitHandle = url.searchParams.get("visitHandle");
@@ -29,12 +34,13 @@ export async function GET(request) {
       : await fetchVisitProfileBundleByHandle(visitHandle.trim());
     if (!bundle) return NextResponse.json({ error: "Not found." }, { status: 404 });
     return NextResponse.json(bundle);
-  } catch {
+  } catch (error) {
+    if (error?.status) throw error;
     return NextResponse.json({ error: "Database unavailable." }, { status: 503 });
   }
 }
 
-export async function PATCH(request) {
+async function PATCHHandler(request) {
   await ensureReady();
   const token = await readSessionTokenFromCookies();
 
@@ -61,3 +67,6 @@ export async function PATCH(request) {
 
   return NextResponse.json(patched);
 }
+
+export const GET = staffRoute(GETHandler);
+export const PATCH = staffRoute(PATCHHandler);
